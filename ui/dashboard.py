@@ -1,4 +1,5 @@
 """Student / Teacher dashboard (navy sidebar + light content area, like the login screen)."""
+from ui.helpers import button, goto_login, label
 import os
 import customtkinter as ctk
 from PIL import Image
@@ -18,17 +19,6 @@ STATUS = {  # status: (text color, soft badge background)
 REQ_COLS = (("ID", 50, 0), ("Equipment", 220, 3), ("Qty", 60, 0), ("Status", 120, 0),
             ("Requested", 150, 1), ("Due Date", 110, 1), ("Approved By", 150, 1))
 PAGES = {"catalog": "Equipment Catalog", "requests": "My Requests"}
-
-
-def label(parent, text, size=12, bold=False, color=colors.TEXT_DARK, **kw):
-    font = ctk.CTkFont(size=size, weight="bold" if bold else "normal")
-    return ctk.CTkLabel(parent, text=text, font=font, text_color=color, **kw)
-
-
-def button(parent, text, command, w=100, h=36, fg=colors.BUTTON_BLUE, hover=colors.BUTTON_BLUE_HOVER, **kw):
-    return ctk.CTkButton(parent, text=text, command=command, width=w, height=h,
-                         fg_color=fg, hover_color=hover, **kw)
-
 
 class DashboardWindow(ctk.CTk):
     def __init__(self, user):
@@ -91,8 +81,6 @@ class DashboardWindow(ctk.CTk):
         label(card, self.user["role"], 11, color=NAV_TEXT, anchor="w").pack(fill="x", padx=14, pady=(0, 10))
         button(bottom, "Change Password", self.open_change_password, w=0, fg="transparent", hover=NAV_HOVER,
                border_width=1, border_color="#3a4a6b", text_color="white").pack(fill="x")
-        button(bottom, "Log Out", self.logout, w=0, fg=colors.ACCENT_RED, hover="#b52a48",
-               font=ctk.CTkFont(size=13, weight="bold")).pack(fill="x", pady=(8, 0))
 
     def _build_topbar(self, parent):
         bar = ctk.CTkFrame(parent, fg_color="transparent")
@@ -253,8 +241,3 @@ class DashboardWindow(ctk.CTk):
     def open_change_password(self):
         from ui.change_password import ChangePasswordDialog
         ChangePasswordDialog(self, self.user)
-
-    def logout(self):
-        self.destroy()
-        from ui.login import LoginWindow
-        LoginWindow().mainloop()
