@@ -1,3 +1,5 @@
+#to run entire app, you need to install this file "requirements.txt" 
+
 customtkinter==5.2.2
 mysql-connector-python==8.4.0
 bcrypt==4.2.0
