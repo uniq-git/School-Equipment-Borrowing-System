@@ -52,6 +52,17 @@ class DashboardWindow(ctk.CTk):
         side = ctk.CTkFrame(self, fg_color=colors.NAVY_DARK, corner_radius=0, width=SIDEBAR_W)
         side.grid(row=0, column=0, sticky="nswe")
         side.pack_propagate(False)
+        bottom = ctk.CTkFrame(side, fg_color="transparent")
+        bottom.pack(side="bottom", fill="x", padx=16, pady=18)
+        card = ctk.CTkFrame(bottom, fg_color=NAV_ACTIVE, corner_radius=10)
+        card.pack(fill="x", pady=(0, 10))
+        label(card, self.user["full_name"], 13, True, "white", anchor="w", wraplength=SIDEBAR_W - 70,
+              justify="left").pack(fill="x", padx=14, pady=(10, 0))
+        label(card, self.user["role"], 11, color=NAV_TEXT, anchor="w").pack(fill="x", padx=14, pady=(0, 10))
+        button(bottom, "Change Password", self.open_change_password, w=0, fg="transparent", hover=NAV_HOVER,
+               border_width=1, border_color="#3a4a6b", text_color="white").pack(fill="x")
+        button(bottom, "Log Out", lambda: goto_login(self), w=0, fg=colors.ACCENT_RED, hover="#b52a48",
+        font=ctk.CTkFont(size=13, weight="bold")).pack(fill="x", pady=(8, 0))
         ctk.CTkFrame(side, fg_color=colors.ACCENT_RED, width=4, height=64, corner_radius=0).place(x=0, y=34)
 
         logo = os.path.join(ASSETS_DIR, "logo.png")
@@ -65,22 +76,11 @@ class DashboardWindow(ctk.CTk):
 
         nav = ctk.CTkFrame(side, fg_color="transparent")
         nav.pack(fill="x", padx=16, pady=(30, 0))
-        label(nav, "MENU", 10, True, "#7f8ba6", anchor="w").pack(fill="x", padx=8, pady=(0, 6))
         for key, title in PAGES.items():
             self._nav[key] = button(nav, title, lambda k=key: self.show_page(k), h=40, corner_radius=8,
                                     fg="transparent", hover=NAV_HOVER, text_color=NAV_TEXT,
                                     anchor="w", font=ctk.CTkFont(size=13, weight="bold"))
             self._nav[key].pack(fill="x", pady=2)
-
-        bottom = ctk.CTkFrame(side, fg_color="transparent")
-        bottom.pack(side="bottom", fill="x", padx=16, pady=18)
-        card = ctk.CTkFrame(bottom, fg_color=NAV_ACTIVE, corner_radius=10)
-        card.pack(fill="x", pady=(0, 10))
-        label(card, self.user["full_name"], 13, True, "white", anchor="w", wraplength=SIDEBAR_W - 70,
-              justify="left").pack(fill="x", padx=14, pady=(10, 0))
-        label(card, self.user["role"], 11, color=NAV_TEXT, anchor="w").pack(fill="x", padx=14, pady=(0, 10))
-        button(bottom, "Change Password", self.open_change_password, w=0, fg="transparent", hover=NAV_HOVER,
-               border_width=1, border_color="#3a4a6b", text_color="white").pack(fill="x")
 
     def _build_topbar(self, parent):
         bar = ctk.CTkFrame(parent, fg_color="transparent")
@@ -154,7 +154,7 @@ class DashboardWindow(ctk.CTk):
     def _item_card(self, item, available):
         ok = available > 0
         color, tint = (colors.SUCCESS_GREEN, "#e3f4ea") if ok else (colors.ACCENT_RED, "#fbe4ea")
-        card = ctk.CTkFrame(self.catalog_frame, fg_color=colors.CARD_WHITE, corner_radius=12)
+        card = ctk.CTkFrame(self.catalog_frame, fg_color=colors.CARD_WHITE, corner_radius=12, height=100)
         card.pack(fill="x", pady=6, padx=(0, 6))
         ctk.CTkFrame(card, fg_color=color, width=5, corner_radius=0).pack(side="left", fill="y")
 
