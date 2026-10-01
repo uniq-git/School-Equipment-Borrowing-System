@@ -1,243 +1,248 @@
-"""Student / Teacher dashboard (navy sidebar + light content area, like the login screen)."""
-from ui.helpers import button, goto_login, label
-import os
+"""Admin / Staff dashboard (navy sidebar + light content area, same look as the student dashboard)."""
 import customtkinter as ctk
-from PIL import Image
+from tkinter import messagebox
 
 from ui import colors
-from ui.left_panel import ASSETS_DIR
-import equipment_service
+from ui.helpers import (AMBER, build_main, build_sidebar, build_topbar, fill_table, fmt_date, label,
+                        selected_id, setup_table_style, show_page, table_page, tool_row)
+from database import get_connection
 import borrow_service
+import equipment_service
 
-SIDEBAR_W, NAV_TEXT, NAV_ACTIVE, NAV_HOVER = 250, "#c7cede", "#1f3357", "#1a2b49"
-STATUS = {  # status: (text color, soft badge background)
-    "Pending": ("#b7791f", "#fdf3dc"),
-    "Approved": (colors.SUCCESS_GREEN, "#e3f4ea"),
-    "Denied": (colors.ACCENT_RED, "#fbe4ea"),
-}
-# My Requests columns: (title, min width, stretch weight)
-REQ_COLS = (("ID", 50, 0), ("Equipment", 220, 3), ("Qty", 60, 0), ("Status", 120, 0),
-            ("Requested", 150, 1), ("Due Date", 110, 1), ("Approved By", 150, 1))
-PAGES = {"catalog": "Equipment Catalog", "requests": "My Requests"}
+ROLES = ["Admin", "Student", "Teacher", "Staff"]
+TITLES = {"users": "User Management", "equipment": "Equipment", "pending": "Pending Requests",
+          "active": "Active Transactions"}
+# (heading, minimum width); columns stretch to fill the card.
+USER_COLS = (("#", 36), ("Full Name", 140), ("ID Number", 110), ("Email", 180), ("Role", 70),
+             ("Verified", 66), ("Status", 70), ("Created", 100))
+EQUIP_COLS = (("#", 36), ("Name", 170), ("Category", 140), ("Qty", 56), ("Available", 76),
+              ("Condition", 80), ("Added By", 150), ("Created", 100))
+PENDING_COLS = (("#", 36), ("Borrower", 150), ("Role", 70), ("Equipment", 170), ("Qty", 50),
+                ("Requested", 110), ("Proposed Due", 110))
+ACTIVE_COLS = (("#", 36), ("Borrower", 140), ("Role", 70), ("Equipment", 150), ("Qty", 50),
+               ("Borrowed On", 110), ("Due Date", 100), ("Approved By", 120))
 
-class DashboardWindow(ctk.CTk):
+
+def db(sql, params=(), fetch=False):
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute(sql, params)
+    rows = cursor.fetchall() if fetch else conn.commit()
+    cursor.close()
+    conn.close()
+    return rows
+
+
+def search_var(on_change):
+    var = ctk.StringVar()
+    var.trace_add("write", lambda *_: on_change())
+    return var
+
+
+class AdminDashboard(ctk.CTk):
     def __init__(self, user):
         super().__init__()
-        self.user, self._imgs, self._items, self._pages, self._nav = user, [], [], {}, {}
+        self.user, self._users, self._equipment = user, [], []
         self.title("ICCT Colleges Foundation, Inc. - Equipment Borrowing System")
-        self.geometry("1150x700")
-        self.minsize(980, 620)
+        self.geometry("1280x720")
+        self.minsize(1100, 640)
         self.configure(fg_color=colors.BG_LIGHT)
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
+        setup_table_style()
 
-        self._build_sidebar()
-
-        main = ctk.CTkFrame(self, fg_color=colors.BG_LIGHT, corner_radius=0)
-        main.grid(row=0, column=1, sticky="nswe")
-        main.grid_columnconfigure(0, weight=1)
-        main.grid_rowconfigure(1, weight=1)
-        self._build_topbar(main)
-
-        body = ctk.CTkFrame(main, fg_color="transparent")
-        body.grid(row=1, column=0, sticky="nswe", padx=28, pady=(0, 24))
-        body.grid_columnconfigure(0, weight=1)
-        body.grid_rowconfigure(0, weight=1)
-        self._pages = {"catalog": self._build_catalog(body), "requests": self._build_requests(body)}
-        self.show_page("catalog")
-
-    # ---------- layout ----------
-
-    def _build_sidebar(self):
-        side = ctk.CTkFrame(self, fg_color=colors.NAVY_DARK, corner_radius=0, width=SIDEBAR_W)
-        side.grid(row=0, column=0, sticky="nswe")
-        side.pack_propagate(False)
-        bottom = ctk.CTkFrame(side, fg_color="transparent")
-        bottom.pack(side="bottom", fill="x", padx=16, pady=18)
-        card = ctk.CTkFrame(bottom, fg_color=NAV_ACTIVE, corner_radius=10)
-        card.pack(fill="x", pady=(0, 10))
-        label(card, self.user["full_name"], 13, True, "white", anchor="w", wraplength=SIDEBAR_W - 70,
-              justify="left").pack(fill="x", padx=14, pady=(10, 0))
-        label(card, self.user["role"], 11, color=NAV_TEXT, anchor="w").pack(fill="x", padx=14, pady=(0, 10))
-        button(bottom, "Change Password", self.open_change_password, w=0, fg="transparent", hover=NAV_HOVER,
-               border_width=1, border_color="#3a4a6b", text_color="white").pack(fill="x")
-        button(bottom, "Log Out", lambda: goto_login(self), w=0, fg=colors.ACCENT_RED, hover="#b52a48",
-        font=ctk.CTkFont(size=13, weight="bold")).pack(fill="x", pady=(8, 0))
-        ctk.CTkFrame(side, fg_color=colors.ACCENT_RED, width=4, height=64, corner_radius=0).place(x=0, y=34)
-
-        logo = os.path.join(ASSETS_DIR, "logo.png")
-        if os.path.exists(logo):
-            img = Image.open(logo)
-            self._logo = ctk.CTkImage(img, img, size=(84, 84))
-            ctk.CTkLabel(side, image=self._logo, text="").pack(pady=(26, 10))
-        label(side, "ICCT Colleges\nFoundation, Inc.", 15, True, "white").pack(pady=(0 if os.path.exists(logo) else 30, 0))
-        label(side, "Equipment Borrowing System", 11, color=NAV_TEXT).pack(pady=(4, 10))
-        ctk.CTkFrame(side, fg_color=colors.ACCENT_RED, width=50, height=3, corner_radius=2).pack()
-
-        nav = ctk.CTkFrame(side, fg_color="transparent")
-        nav.pack(fill="x", padx=16, pady=(30, 0))
-        for key, title in PAGES.items():
-            self._nav[key] = button(nav, title, lambda k=key: self.show_page(k), h=40, corner_radius=8,
-                                    fg="transparent", hover=NAV_HOVER, text_color=NAV_TEXT,
-                                    anchor="w", font=ctk.CTkFont(size=13, weight="bold"))
-            self._nav[key].pack(fill="x", pady=2)
-
-    def _build_topbar(self, parent):
-        bar = ctk.CTkFrame(parent, fg_color="transparent")
-        bar.grid(row=0, column=0, sticky="we", padx=28, pady=(24, 14))
-        bar.grid_columnconfigure(0, weight=1)
-        self.title_lbl = label(bar, "", 24, True, anchor="w")
-        self.title_lbl.grid(row=0, column=0, sticky="w")
-
-        stats = ctk.CTkFrame(bar, fg_color="transparent")
-        stats.grid(row=0, column=1, sticky="e")
-        self.stat_lbls = {}
-        for status, (color, _) in STATUS.items():
-            box = ctk.CTkFrame(stats, fg_color=colors.CARD_WHITE, corner_radius=10, width=96, height=58)
-            box.pack(side="left", padx=(8, 0))
-            box.pack_propagate(False)
-            self.stat_lbls[status] = label(box, "0", 20, True, color)
-            self.stat_lbls[status].pack(pady=(6, 0))
-            label(box, status, 11, color=colors.TEXT_GRAY).pack()
+        builders = {"users": self._users_page, "equipment": self._equipment_page,
+                    "pending": self._pending_page, "active": self._active_page}
+        keys = [k for k in builders if k != "users" or user["role"] == "Admin"]
+        self._nav = build_sidebar(self, {k: TITLES[k] for k in keys}, self.show_page, user, self.logout)
+        main, body = build_main(self)
+        self.title_lbl, self.stats = build_topbar(main, (
+            ("pending", "Pending", AMBER), ("active", "Active", colors.SUCCESS_GREEN),
+            ("equipment", "Equipment", colors.BUTTON_BLUE)))
+        self._pages = {k: builders[k](body) for k in keys}
+        self.show_page(keys[0])
 
     def show_page(self, key):
-        for name, page in self._pages.items():
-            page.grid(row=0, column=0, sticky="nswe") if name == key else page.grid_forget()
-        for name, btn in self._nav.items():
-            btn.configure(fg_color=NAV_ACTIVE if name == key else "transparent",
-                          text_color="white" if name == key else NAV_TEXT)
-        self.title_lbl.configure(text=PAGES[key])
+        show_page(key, self._pages, self._nav, self.title_lbl, TITLES)
 
-    # ---------- Equipment Catalog ----------
+    # ---------- User Management (Admin only) ----------
 
-    def _build_catalog(self, parent):
-        page = ctk.CTkFrame(parent, fg_color="transparent")
-        page.grid_columnconfigure(0, weight=1)
-        page.grid_rowconfigure(1, weight=1)
-
-        bar = ctk.CTkFrame(page, fg_color=colors.CARD_WHITE, corner_radius=10)
-        bar.grid(row=0, column=0, sticky="we", pady=(0, 12))
-        self.search_var = ctk.StringVar()
-        self.search_var.trace_add("write", lambda *_: self.render_catalog())
-        ctk.CTkEntry(bar, textvariable=self.search_var, placeholder_text="Search equipment...", width=260,
-                     height=36, fg_color=colors.ENTRY_BG, border_color=colors.BORDER_GRAY,
-                     text_color=colors.TEXT_DARK).pack(side="left", padx=(14, 10), pady=12)
-        label(bar, "Category", color=colors.TEXT_GRAY).pack(side="left", padx=6)
-        self.category_var = ctk.StringVar(value="All")
-        ctk.CTkOptionMenu(bar, values=["All"] + equipment_service.get_category_names(), variable=self.category_var,
-                          width=190, height=36, fg_color=colors.ENTRY_BG, button_color=colors.BUTTON_BLUE,
-                          button_hover_color=colors.BUTTON_BLUE_HOVER, text_color=colors.TEXT_DARK,
-                          command=lambda _: self.render_catalog()).pack(side="left")
-        button(bar, "Refresh", self.load_catalog).pack(side="right", padx=14)
-
-        self.catalog_frame = ctk.CTkScrollableFrame(page, fg_color="transparent", corner_radius=0)
-        self.catalog_frame.grid(row=1, column=0, sticky="nswe")
-        self.load_catalog()
+    def _users_page(self, parent):
+        page, bar, self.tree = table_page(parent, USER_COLS, {"inactive": colors.TEXT_GRAY})
+        self.user_search = search_var(self.render_users)
+        tool_row(bar, [("Add User", self.open_add_user)], [("Refresh", self.load_users)],
+                 (self.user_search, "Search users..."))
+        row = tool_row(bar, [("Activate", lambda: self.update_status("active"), "green"),
+                             ("Deactivate", lambda: self.update_status("inactive"), "red"),
+                             ("Delete", self.delete_user, "red")],
+                       [("Apply Role", self.update_role)], pady=(0, 12))
+        self.role_var = ctk.StringVar(value="Student")
+        ctk.CTkOptionMenu(row, values=ROLES, variable=self.role_var, width=120, height=36,
+                          fg_color=colors.ENTRY_BG, button_color=colors.BUTTON_BLUE,
+                          button_hover_color=colors.BUTTON_BLUE_HOVER,
+                          text_color=colors.TEXT_DARK).pack(side="right", padx=(0, 20))
+        label(row, "Set role", color=colors.TEXT_GRAY).pack(side="right", padx=(0, 8))
+        self.load_users()
         return page
 
-    def load_catalog(self):
-        self._items = [(i, borrow_service.get_available_quantity(i["id"])) for i in equipment_service.get_all_equipment()]
-        self.render_catalog()
+    def open_add_user(self):
+        from ui.add_user import AddUserDialog
+        AddUserDialog(self)
 
-    def render_catalog(self):
-        for w in self.catalog_frame.winfo_children():
-            w.destroy()
-        self._imgs.clear()
-        cat, query = self.category_var.get(), self.search_var.get().strip().lower()
-        rows = [(i, a) for i, a in self._items
-                if cat in ("All", i["category"]) and query in i["name"].lower()]
-        if not rows:
-            label(self.catalog_frame, "No equipment found.", 13, color=colors.TEXT_GRAY).pack(pady=40)
-        for item, available in rows:
-            self._item_card(item, available)
+    def load_users(self):
+        self._users = db("SELECT * FROM users ORDER BY created_at DESC", fetch=True)
+        self.render_users()
 
-    def _item_card(self, item, available):
-        ok = available > 0
-        color, tint = (colors.SUCCESS_GREEN, "#e3f4ea") if ok else (colors.ACCENT_RED, "#fbe4ea")
-        card = ctk.CTkFrame(self.catalog_frame, fg_color=colors.CARD_WHITE, corner_radius=12, height=100)
-        card.pack(fill="x", pady=6, padx=(0, 6))
-        ctk.CTkFrame(card, fg_color=color, width=5, corner_radius=0).pack(side="left", fill="y")
+    def render_users(self):
+        q = self.user_search.get().strip().lower()
+        rows = [u for u in self._users
+                if q in " ".join(str(u[k] or "") for k in ("full_name", "student_number", "email", "role")).lower()]
+        fill_table(self.tree, rows, lambda u: (
+            u["full_name"], u["student_number"], u["email"], u["role"], "Yes" if u["email_verified"] else "No",
+            u["status"].title(), fmt_date(u["created_at"])),
+            lambda u: ("inactive",) if u["status"] == "inactive" else ())
 
-        thumb = label(card, "No\nPhoto", 11, color=colors.TEXT_GRAY, fg_color=colors.ENTRY_BG,
-                      width=72, height=72, corner_radius=8)
-        path = equipment_service.get_photo_full_path(item["photo_path"])
-        try:
-            if path:
-                img = Image.open(path)
-                img.thumbnail((72, 72))
-                self._imgs.append(ctk.CTkImage(img, img, size=img.size))
-                thumb.configure(image=self._imgs[-1], text="")
-        except Exception:
-            pass
-        thumb.pack(side="left", padx=16, pady=14)
+    def _selected_user(self, own_account_error=None, blocked=False):
+        """Selected user id; shows own_account_error and returns None if it's the logged-in admin and blocked."""
+        user_id = selected_id(self.tree, "a user")
+        if user_id and blocked and int(user_id) == self.user["id"]:
+            messagebox.showerror("Not Allowed", own_account_error)
+            return None
+        return user_id
 
-        info = ctk.CTkFrame(card, fg_color="transparent")
-        info.pack(side="left", fill="x", expand=True, pady=14)
-        label(info, item["name"], 15, True, anchor="w").pack(fill="x")
-        label(info, f"{item['category']}  •  Condition: {item['condition_status']}", 12,
-              color=colors.TEXT_GRAY, anchor="w").pack(fill="x", pady=(2, 0))
+    def update_status(self, status):
+        user_id = self._selected_user("You cannot deactivate your own account while logged in.", status != "active")
+        if user_id:
+            db("UPDATE users SET status = %s WHERE id = %s", (status, user_id))
+            self.load_users()
 
-        button(card, "Request", lambda: self.open_request_dialog(item, available), h=34,
-               font=ctk.CTkFont(size=13, weight="bold"),
-               state="normal" if ok else "disabled").pack(side="right", padx=(8, 18))
-        label(card, f"{available} available" if ok else "Out of stock", 12, True, color,
-              fg_color=tint, corner_radius=12, width=110, height=26).pack(side="right", padx=8)
+    def update_role(self):
+        role = self.role_var.get()
+        user_id = self._selected_user("You cannot change your own role while logged in.", role != self.user["role"])
+        if user_id:
+            db("UPDATE users SET role = %s WHERE id = %s", (role, user_id))
+            self.load_users()
 
-    def open_request_dialog(self, item, available):
+    def delete_user(self):
+        user_id = self._selected_user("You cannot delete your own account while logged in.", True)
+        if not user_id:
+            return
+        name = self.tree.item(user_id, "values")[1]
+        if messagebox.askyesno("Confirm Delete", f"Permanently delete {name}'s account? This cannot be undone."):
+            import auth
+            ok, message = auth.delete_user(user_id)
+            self.load_users() if ok else messagebox.showerror("Delete Failed", message)
+
+    # ---------- Equipment (Admin and Staff) ----------
+
+    def _equipment_page(self, parent):
+        page, bar, self.equipment_tree = table_page(parent, EQUIP_COLS, {"out": colors.ACCENT_RED})
+        self.equip_search = search_var(self.render_equipment)
+        buttons = [("Register Equipment", self.open_add_equipment, "blue", 150),
+                   ("Delete Selected", self.delete_equipment, "red", 130)]
+        if self.user["role"] == "Staff":  # Staff can borrow too; Admin only manages the catalog
+            buttons.append(("Request to Borrow", self.request_equipment, "blue", 150))
+        tool_row(bar, buttons, [("Refresh", self.load_equipment)], (self.equip_search, "Search equipment..."))
+        self.load_equipment()
+        return page
+
+    def open_add_equipment(self):
+        from ui.add_equipment import AddEquipmentDialog
+        AddEquipmentDialog(self, self.user)
+
+    def load_equipment(self):
+        self._equipment = [{**i, "available": borrow_service.get_available_quantity(i["id"])}
+                           for i in equipment_service.get_all_equipment()]
+        self.stats["equipment"].configure(text=str(len(self._equipment)))
+        self.render_equipment()
+
+    def render_equipment(self):
+        q = self.equip_search.get().strip().lower()
+        rows = [i for i in self._equipment if q in f"{i['name']} {i['category']}".lower()]
+        fill_table(self.equipment_tree, rows, lambda i: (
+            i["name"], i["category"], i["quantity"], i["available"], i["condition_status"],
+            i["added_by_name"] or "-", fmt_date(i["created_at"])),
+            lambda i: ("out",) if i["available"] <= 0 else ())
+
+    def request_equipment(self):
+        item_id = selected_id(self.equipment_tree, "an equipment item")
+        if not item_id:
+            return
+        item = next((i for i in equipment_service.get_all_equipment() if i["id"] == int(item_id)), None)
+        if not item:
+            return messagebox.showerror("Not Found", "This equipment item no longer exists.")
+        available = borrow_service.get_available_quantity(item["id"])
+        if available <= 0:
+            return messagebox.showinfo("Unavailable", "There are no available units of this equipment right now.")
         from ui.borrow import RequestEquipmentDialog
         RequestEquipmentDialog(self, self.user, item, available,
-                               on_success=lambda: (self.load_catalog(), self.load_my_requests()))
+                               on_success=lambda: (self.load_equipment(), self.load_pending_requests()))
 
-    # ---------- My Requests ----------
+    def delete_equipment(self):
+        item_id = selected_id(self.equipment_tree, "an equipment item")
+        if item_id and messagebox.askyesno("Confirm Delete", "Remove this equipment item? This cannot be undone."):
+            equipment_service.delete_equipment(item_id)
+            self.load_equipment()
 
-    def _build_requests(self, parent):
-        page = ctk.CTkFrame(parent, fg_color="transparent")
-        page.grid_columnconfigure(0, weight=1)
-        page.grid_rowconfigure(1, weight=1)
-        button(page, "Refresh", self.load_my_requests).grid(row=0, column=0, sticky="w", pady=(0, 12))
+    # ---------- Pending Requests (Admin and Staff) ----------
 
-        card = ctk.CTkFrame(page, fg_color=colors.CARD_WHITE, corner_radius=12)
-        card.grid(row=1, column=0, sticky="nswe")
-
-        head = ctk.CTkFrame(card, fg_color=colors.BG_LIGHT, corner_radius=8, height=38)
-        head.pack(fill="x", padx=16, pady=(16, 4))
-        self._req_row(head, [label(head, t.upper(), 10, True, colors.TEXT_GRAY) for t, _, _ in REQ_COLS])
-
-        self.req_list = ctk.CTkScrollableFrame(card, fg_color="transparent", corner_radius=0)
-        self.req_list.pack(fill="both", expand=True, padx=8, pady=(0, 10))
-        self.load_my_requests()
+    def _pending_page(self, parent):
+        page, bar, self.pending_tree = table_page(parent, PENDING_COLS)
+        tool_row(bar, [("Approve", self.approve_request, "green"), ("Deny", self.deny_request, "red")],
+                 [("Refresh", self.load_pending_requests)])
+        self.load_pending_requests()
         return page
 
-    def _req_row(self, row, cells):
-        """Lay cells out on the shared column grid so header and rows line up."""
-        for i, ((_, width, weight), cell) in enumerate(zip(REQ_COLS, cells)):
-            row.grid_columnconfigure(i, minsize=width, weight=weight)
-            cell.grid(row=0, column=i, sticky="w" if i == 1 else "", padx=6, pady=10)
+    def load_pending_requests(self):
+        rows = borrow_service.get_pending_requests()
+        fill_table(self.pending_tree, rows, lambda r: (
+            r["borrower_name"], r["borrower_role"], r["equipment_name"], r["quantity"],
+            fmt_date(r["request_date"]), fmt_date(r["due_date"])))
+        self.stats["pending"].configure(text=str(len(rows)))
 
-    def load_my_requests(self):
-        for w in self.req_list.winfo_children():
-            w.destroy()
-        counts = dict.fromkeys(STATUS, 0)
-        rows = borrow_service.get_requests_for_user(self.user["id"])
-        if not rows:
-            label(self.req_list, "You haven't made any requests yet.", 13, color=colors.TEXT_GRAY).pack(pady=40)
-        for r in rows:
-            counts[r["status"]] = counts.get(r["status"], 0) + 1
-            color, tint = STATUS.get(r["status"], (colors.TEXT_GRAY, colors.BG_LIGHT))
-            row = ctk.CTkFrame(self.req_list, fg_color="transparent", height=44)
-            row.pack(fill="x", padx=8)
-            plain = [r["id"], r["equipment_name"], r["quantity"]]
-            rest = [r["request_date"], r["due_date"] or "-", r["approved_by_name"] or "-"]
-            cells = [label(row, str(v), 12, i == 1) for i, v in enumerate(plain)]
-            cells.append(label(row, r["status"], 11, True, color, fg_color=tint, corner_radius=12, width=90, height=24))
-            cells += [label(row, str(v), 12, color=colors.TEXT_GRAY) for v in rest]
-            self._req_row(row, cells)
-            ctk.CTkFrame(self.req_list, fg_color=colors.BG_LIGHT, height=1, corner_radius=0).pack(fill="x", padx=8)
-        for status, lbl in self.stat_lbls.items():
-            lbl.configure(text=str(counts[status]))
+    def _selected_request(self):
+        request_id = selected_id(self.pending_tree, "a pending request")
+        if not request_id:
+            return None
+        request = borrow_service.get_request_by_id(int(request_id))
+        if not request or request["status"] != "Pending":
+            messagebox.showinfo("Not Available", "This request is no longer pending.")
+            self.load_pending_requests()
+            return None
+        return request
+
+    def approve_request(self):
+        request = self._selected_request()
+        if request:
+            from ui.borrow import ApproveRequestDialog
+            ApproveRequestDialog(self, self.user, request, on_success=lambda: (
+                self.load_pending_requests(), self.load_active_transactions(), self.load_equipment()))
+
+    def deny_request(self):
+        request = self._selected_request()
+        if request and messagebox.askyesno(
+                "Confirm Deny", f"Deny the request for '{request['equipment_name']}' from {request['borrower_name']}?"):
+            ok, message = borrow_service.deny_request(request["id"], self.user["id"])
+            self.load_pending_requests() if ok else messagebox.showerror("Deny Failed", message)
+
+    # ---------- Active Transactions (Admin and Staff) ----------
+
+    def _active_page(self, parent):
+        page, bar, self.active_tree = table_page(parent, ACTIVE_COLS)
+        tool_row(bar, [("Refresh", self.load_active_transactions)])
+        self.load_active_transactions()
+        return page
+
+    def load_active_transactions(self):
+        rows = borrow_service.get_active_transactions()
+        fill_table(self.active_tree, rows, lambda r: (
+            r["borrower_name"], r["borrower_role"], r["equipment_name"], r["quantity"],
+            fmt_date(r["request_date"]), fmt_date(r["due_date"]), r["approved_by_name"] or "-"))
+        self.stats["active"].configure(text=str(len(rows)))
 
     # ---------- shared ----------
 
-    def open_change_password(self):
-        from ui.change_password import ChangePasswordDialog
-        ChangePasswordDialog(self, self.user)
+    def logout(self):
+        self.destroy()
+        from ui.login import LoginWindow
+        LoginWindow().mainloop()

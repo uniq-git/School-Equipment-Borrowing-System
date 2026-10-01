@@ -1,20 +1,21 @@
-# Shortcuts for making the buttons, labels and input boxes
-# so we don't repeat the same lines in every screen.
-import threading
+#This help both dashboard ui
+import os
 import customtkinter as ctk
+from tkinter import messagebox, ttk
+from PIL import Image
 
 from ui import colors
-from ui.left_panel import build_left_panel
-import auth
-import email_service
+from ui.left_panel import ASSETS_DIR
+
+SIDEBAR_W, NAV_TEXT, NAV_ACTIVE, NAV_HOVER = 250, "#c7cede", "#1f3357", "#1a2b49"
+RED_HOVER, GREEN_HOVER, SELECT_BG, AMBER = "#b52a48", "#166838", "#dbe4f3", "#b7791f"
 
 
-def font(size=12, bold=False):
-    return ctk.CTkFont(size=size, weight="bold" if bold else "normal")
-
+# small widgets
 
 def label(parent, text, size=12, bold=False, color=colors.TEXT_DARK, **kw):
-    return ctk.CTkLabel(parent, text=text, font=font(size, bold), text_color=color, **kw)
+    font = ctk.CTkFont(size=size, weight="bold" if bold else "normal")
+    return ctk.CTkLabel(parent, text=text, font=font, text_color=color, **kw)
 
 
 def button(parent, text, command, w=100, h=36, fg=colors.BUTTON_BLUE, hover=colors.BUTTON_BLUE_HOVER, **kw):
@@ -22,219 +23,180 @@ def button(parent, text, command, w=100, h=36, fg=colors.BUTTON_BLUE, hover=colo
                          fg_color=fg, hover_color=hover, **kw)
 
 
-def soft_button(parent, text, command, w=100, h=34, **kw):
-    # gray button (Show, Browse, Send Verification Code)
-    return button(parent, text, command, w, h, colors.ENTRY_BG, colors.BORDER_GRAY,
-                  text_color=colors.TEXT_DARK, **kw)
+def fmt_date(value):
+    """Short, readable date (e.g. 'Sep 29, 2026'); passes through anything that isn't a date."""
+    if not value:
+        return "-"
+    return value.strftime("%b %d, %Y") if hasattr(value, "strftime") else str(value)
 
 
-def link(parent, text, command, size=12, bold=True, w=20, **kw):
-    # blue text that acts like a button, e.g. "Register here"
-    return ctk.CTkButton(parent, text=text, command=command, width=w, fg_color="transparent", hover=False,
-                         text_color=colors.LINK_BLUE, font=font(size, bold), **kw)
+# Window Layout
+
+def build_sidebar(window, nav_items, on_select, user, on_logout, on_change_password=None):
+    """Navy sidebar with logo, nav buttons, user card and Log Out. Returns {key: nav button}."""
+    side = ctk.CTkFrame(window, fg_color=colors.NAVY_DARK, corner_radius=0, width=SIDEBAR_W)
+    side.grid(row=0, column=0, sticky="nswe")
+    side.pack_propagate(False)
+    ctk.CTkFrame(side, fg_color=colors.ACCENT_RED, width=4, height=64, corner_radius=0).place(x=0, y=34)
+
+    logo = os.path.join(ASSETS_DIR, "logo.png")
+    if os.path.exists(logo):
+        img = Image.open(logo)
+        window._logo = ctk.CTkImage(img, img, size=(84, 84))  # keep a reference so it isn't garbage collected
+        ctk.CTkLabel(side, image=window._logo, text="").pack(pady=(26, 10))
+    label(side, "ICCT Colleges\nFoundation, Inc.", 15, True, "white").pack(pady=(0 if os.path.exists(logo) else 30, 0))
+    label(side, "Equipment Borrowing System", 11, color=NAV_TEXT).pack(pady=(4, 10))
+    ctk.CTkFrame(side, fg_color=colors.ACCENT_RED, width=50, height=3, corner_radius=2).pack()
+
+    nav = ctk.CTkFrame(side, fg_color="transparent")
+    nav.pack(fill="x", padx=16, pady=(30, 0))
+    label(nav, "MENU", 10, True, "#7f8ba6", anchor="w").pack(fill="x", padx=8, pady=(0, 6))
+    buttons = {}
+    for key, title in nav_items.items():
+        buttons[key] = button(nav, title, lambda k=key: on_select(k), h=40, corner_radius=8,
+                              fg="transparent", hover=NAV_HOVER, text_color=NAV_TEXT,
+                              anchor="w", font=ctk.CTkFont(size=13, weight="bold"))
+        buttons[key].pack(fill="x", pady=2)
+
+    bottom = ctk.CTkFrame(side, fg_color="transparent")
+    bottom.pack(side="bottom", fill="x", padx=16, pady=18)
+    card = ctk.CTkFrame(bottom, fg_color=NAV_ACTIVE, corner_radius=10)
+    card.pack(fill="x", pady=(0, 10))
+    label(card, user["full_name"], 13, True, "white", anchor="w", wraplength=SIDEBAR_W - 70,
+          justify="left").pack(fill="x", padx=14, pady=(10, 0))
+    label(card, user["role"], 11, color=NAV_TEXT, anchor="w").pack(fill="x", padx=14, pady=(0, 10))
+    if on_change_password:
+        button(bottom, "Change Password", on_change_password, w=0, fg="transparent", hover=NAV_HOVER,
+               border_width=1, border_color="#3a4a6b", text_color="white").pack(fill="x")
+    button(bottom, "Log Out", on_logout, w=0, fg=colors.ACCENT_RED, hover=RED_HOVER,
+           font=ctk.CTkFont(size=13, weight="bold")).pack(fill="x", pady=(8 if on_change_password else 0, 0))
+    return buttons
 
 
-def entry(parent, placeholder, w=300, h=34, **kw):
-    return ctk.CTkEntry(parent, placeholder_text=placeholder, width=w, height=h, fg_color=colors.ENTRY_BG,
-                        border_color=colors.BORDER_GRAY, text_color=colors.TEXT_DARK, **kw)
+def build_topbar(parent, stats):
+    """Page title on the left, stat boxes on the right. stats = [(key, title, color)].
+    Returns (title_label, {key: value_label})."""
+    bar = ctk.CTkFrame(parent, fg_color="transparent")
+    bar.grid(row=0, column=0, sticky="we", padx=28, pady=(24, 14))
+    bar.grid_columnconfigure(0, weight=1)
+    title_lbl = label(bar, "", 24, True, anchor="w")
+    title_lbl.grid(row=0, column=0, sticky="w")
+
+    box_row = ctk.CTkFrame(bar, fg_color="transparent")
+    box_row.grid(row=0, column=1, sticky="e")
+    value_lbls = {}
+    for key, title, color in stats:
+        box = ctk.CTkFrame(box_row, fg_color=colors.CARD_WHITE, corner_radius=10, width=96, height=58)
+        box.pack(side="left", padx=(8, 0))
+        box.pack_propagate(False)
+        value_lbls[key] = label(box, "0", 20, True, color)
+        value_lbls[key].pack(pady=(6, 0))
+        label(box, title, 11, color=colors.TEXT_GRAY).pack()
+    return title_lbl, value_lbls
 
 
-def goto_login(window):
-    # used for log out and "back to login"
-    window.destroy()
-    from ui.login import LoginWindow
-    LoginWindow().mainloop()
+def build_main(window):
+    """Right-hand area: returns (main frame, body frame) with the topbar slot in row 0."""
+    main = ctk.CTkFrame(window, fg_color=colors.BG_LIGHT, corner_radius=0)
+    main.grid(row=0, column=1, sticky="nswe")
+    main.grid_columnconfigure(0, weight=1)
+    main.grid_rowconfigure(1, weight=1)
+    body = ctk.CTkFrame(main, fg_color="transparent")
+    body.grid(row=1, column=0, sticky="nswe", padx=28, pady=(0, 24))
+    body.grid_columnconfigure(0, weight=1)
+    body.grid_rowconfigure(0, weight=1)
+    return main, body
 
 
-class Fields:
-    # makes a title + input row. Example:
-    #   f = Fields(card, pad_x=30, h=34, gap=14)
-    #   name_box = f.entry("Full Name", "Enter your full name")
-
-    def __init__(self, parent, pad_x=30, h=34, gap=14):
-        self.parent, self.pad_x, self.h, self.gap = parent, pad_x, h, gap
-
-    def place(self, widget, pady=0):
-        widget.pack(anchor="w", padx=self.pad_x, pady=pady)
-        return widget
-
-    def title(self, text, gap=None):
-        label(self.parent, text, 13, True).pack(anchor="w", padx=self.pad_x, pady=(gap or self.gap, 4))
-
-    def entry(self, title, placeholder, gap=None):
-        self.title(title, gap)
-        return self.place(entry(self.parent, placeholder, h=self.h))
-
-    def password(self, title, placeholder, gap=None):
-        self.title(title, gap)
-        row = self.place(ctk.CTkFrame(self.parent, fg_color="transparent"))
-        field = entry(row, placeholder, w=245, h=self.h, show="*")
-        field.pack(side="left")
-
-        def toggle():
-            # switch between hidden and visible password
-            hidden = field.cget("show") == "*"
-            field.configure(show="" if hidden else "*")
-            btn.configure(text="Hide" if hidden else "Show")
-
-        btn = soft_button(row, "Show", toggle, w=48, h=self.h)
-        btn.pack(side="left", padx=(6, 0))
-        return field
-
-    def menu(self, title, values, variable, command=None):
-        self.title(title)
-        return self.place(ctk.CTkOptionMenu(self.parent, values=values, variable=variable, width=300, command=command))
-
-    def error(self, pady=(8, 0)):
-        # red message under the form
-        return self.place(label(self.parent, "", 12, color=colors.ACCENT_RED, wraplength=300, justify="left"), pady)
-
-    def submit(self, text, command, h=40, pady=(14, 10), **kw):
-        # the big main button
-        return self.place(button(self.parent, text, command, w=300, h=h, font=font(14, True), **kw), pady)
+def show_page(key, pages, nav, title_lbl, titles):
+    """Show one page, highlight its nav button and set the page title."""
+    for name, page in pages.items():
+        page.grid(row=0, column=0, sticky="nswe") if name == key else page.grid_forget()
+    for name, btn in nav.items():
+        btn.configure(fg_color=NAV_ACTIVE if name == key else "transparent",
+                      text_color="white" if name == key else NAV_TEXT)
+    title_lbl.configure(text=titles[key])
 
 
-class AuthWindow(ctk.CTk):
-    # login, register and forgot password all look the same:
-    # navy panel on the left, white card on the right. Put the form inside self.card.
-
-    def __init__(self, title, height, card_h, scroll=False):
-        super().__init__()
-        self.title(f"ICCT Colleges Foundation, Inc. - {title}")
-        self.geometry(f"973x{height}")
-        self.resizable(False, False)
-        self.configure(fg_color=colors.BG_LIGHT)
-        self.grid_columnconfigure(1, weight=1)
-        self.grid_rowconfigure(0, weight=1)
-
-        build_left_panel(self, height=height).grid(row=0, column=0, sticky="nswe")
-        right = ctk.CTkFrame(self, fg_color=colors.BG_LIGHT, corner_radius=0)
-        right.grid(row=0, column=1, sticky="nswe")
-        right.grid_columnconfigure(0, weight=1)
-        right.grid_rowconfigure(0, weight=1)
-
-        if scroll:  # for long forms like register
-            self.card = ctk.CTkScrollableFrame(
-                right, fg_color=colors.CARD_WHITE, corner_radius=12, width=380, height=card_h,
-                scrollbar_button_color=colors.BORDER_GRAY, scrollbar_fg_color=colors.CARD_WHITE)
-            self.card.grid(row=0, column=0, pady=18)
-        else:
-            self.card = ctk.CTkFrame(right, fg_color=colors.CARD_WHITE, corner_radius=12, width=380, height=card_h)
-            self.card.grid(row=0, column=0)
-            self.card.grid_propagate(False)
-
-    def open_login(self):
-        goto_login(self)
+KINDS = {"blue": (colors.BUTTON_BLUE, colors.BUTTON_BLUE_HOVER), "green": (colors.SUCCESS_GREEN, GREEN_HOVER),
+         "red": (colors.ACCENT_RED, RED_HOVER)}
+LEFT_COLS = {"Full Name", "Email", "Name", "Category", "Added By", "Borrower", "Equipment", "Approved By"}
 
 
-class FormDialog(ctk.CTkToplevel):
-    # popup form (Add User, Change Password, Request...)
-    # add the fields with self.f, then call self.footer() at the end
-
-    def __init__(self, parent, title, size, heading=None, top=20, gap=14):
-        super().__init__(parent)
-        self.parent = parent
-        self.title(title)
-        self.geometry(size)
-        self.resizable(False, False)
-        self.configure(fg_color=colors.CARD_WHITE)
-        self.transient(parent)
-        self.grab_set()
-        self.f = Fields(self, 30, h=34, gap=gap)
-        label(self, heading or title, 20, True).pack(anchor="w", padx=30, pady=(top, 4))
-
-    def footer(self, text, command, status_pady=(12, 0), fg=colors.BUTTON_BLUE, hover=colors.BUTTON_BLUE_HOVER):
-        # message line, main button, then Cancel
-        self.error_label = self.f.error(status_pady)
-        self.f.place(button(self, text, command, w=300, h=40, fg=fg, hover=hover, font=font(13, True)), (16, 6))
-        self.f.place(button(self, "Cancel", self.destroy, w=300, h=32, fg="transparent",
-                            hover=colors.BG_LIGHT, text_color=colors.TEXT_GRAY))
-
-    def show(self, message, ok=False):
-        # green if it worked, red if not
-        self.error_label.configure(text=message, text_color=colors.SUCCESS_GREEN if ok else colors.ACCENT_RED)
-
-    def result(self, ok, message, on_success=None, delay=1200):
-        # if it worked: refresh the list behind, then close the popup after a moment
-        self.show(message, ok)
-        if ok:
-            if on_success:
-                on_success()
-            self.after(delay, self.destroy)
+def tool_row(bar, left=(), right=(), search=None, pady=(12, 12)):
+    """A row of buttons inside a toolbar card. left/right = [(text, command[, kind[, width]])],
+    kind = blue / green / red; search = (StringVar, placeholder). Returns the row frame."""
+    row = ctk.CTkFrame(bar, fg_color="transparent")
+    row.pack(fill="x", pady=pady)
+    if search:
+        ctk.CTkEntry(row, textvariable=search[0], placeholder_text=search[1], width=260, height=36,
+                     fg_color=colors.ENTRY_BG, border_color=colors.BORDER_GRAY,
+                     text_color=colors.TEXT_DARK).pack(side="left", padx=(14, 10))
+    for i, (text, command, *opt) in enumerate(left):
+        fg, hover = KINDS[opt[0] if opt else "blue"]
+        button(row, text, command, w=opt[1] if len(opt) > 1 else 100, fg=fg, hover=hover).pack(
+            side="left", padx=(14 if i == 0 and not search else 0, 12))
+    for i, (text, command) in enumerate(right):
+        button(row, text, command).pack(side="right", padx=(0, 14 if i == 0 else 12))
+    return row
 
 
-class VerifyMixin:
-    # send code / verify code, shared by register, forgot password and change password.
-    # The screen needs self.error_label and an email (see get_email).
-    #
-    # must_exist:
-    #   True  = email must already have an account (forgot password)
-    #   False = email must not be registered yet (register)
-    #   None  = don't check (change password)
+def table_page(parent, cols, tags=None):
+    """Page with a white toolbar card (row 0) and a styled table card (row 1). Returns (page, toolbar, tree)."""
+    page = ctk.CTkFrame(parent, fg_color="transparent")
+    page.grid_columnconfigure(0, weight=1)
+    page.grid_rowconfigure(1, weight=1)
+    bar = ctk.CTkFrame(page, fg_color=colors.CARD_WHITE, corner_radius=10)
+    bar.grid(row=0, column=0, sticky="we", pady=(0, 12))
+    return page, bar, make_table(page, cols, tags)
 
-    must_exist = None
 
-    def get_email(self):
-        return self.email_entry.get().strip().lower()
+# Tables
 
-    def verify_section(self, f, verify_text="Verify", send_h=32):
-        soft_button(f.parent, "Send Verification Code", self.handle_send_code, w=300, h=send_h,
-                    font=font(12, True)).pack(anchor="w", padx=f.pad_x, pady=(8, 0))
-        f.title("Verification Code")
-        row = f.place(ctk.CTkFrame(f.parent, fg_color="transparent"))
-        self.code_var = ctk.StringVar()
-        self._last_checked = None
-        self.code_var.trace_add("write", self._on_code_changed)
-        entry(row, "6-digit code", w=210, h=f.h, textvariable=self.code_var).pack(side="left")
-        button(row, verify_text, self.handle_verify_code, w=84, h=f.h).pack(side="left", padx=(6, 0))
-        self.verify_status_label = f.place(
-            label(f.parent, "Email not verified yet.", 11, color=colors.TEXT_GRAY, wraplength=300, justify="left"),
-            (4, 0))
+def setup_table_style():
+    style = ttk.Style()
+    style.theme_use("clam")
+    style.configure("Admin.Treeview", background=colors.CARD_WHITE, fieldbackground=colors.CARD_WHITE,
+                    foreground=colors.TEXT_DARK, rowheight=40, borderwidth=0, relief="flat",
+                    font=("Segoe UI", 10))
+    style.configure("Admin.Treeview.Heading", background=colors.BG_LIGHT, foreground=colors.TEXT_GRAY,
+                    font=("Segoe UI", 9, "bold"), relief="flat", borderwidth=0, padding=(6, 10))
+    style.map("Admin.Treeview", background=[("selected", SELECT_BG)],
+              foreground=[("selected", colors.TEXT_DARK)])
+    style.map("Admin.Treeview.Heading", background=[("active", colors.BG_LIGHT)])
+    style.layout("Admin.Treeview", [("Treeview.treearea", {"sticky": "nswe"})])
 
-    def _status(self, text, color=colors.TEXT_GRAY):
-        self.verify_status_label.configure(text=text, text_color=color)
 
-    def handle_send_code(self):
-        email, error = self.get_email(), None
-        if self.must_exist is not None:
-            if not auth.is_valid_email(email):
-                error = "Please enter a valid email address first."
-            elif bool(auth.email_exists(email)) != self.must_exist:
-                error = ("No account found with that email address." if self.must_exist
-                         else "This email is already registered.")
-        self.error_label.configure(text=error or "")
-        if error:
-            return
+def make_table(page, cols, tags=None):
+    """White card with a styled Treeview + scrollbar in row 1. cols = [(heading, min width)]."""
+    card = ctk.CTkFrame(page, fg_color=colors.CARD_WHITE, corner_radius=12)
+    card.grid(row=1, column=0, sticky="nswe")
+    card.grid_columnconfigure(0, weight=1)
+    card.grid_rowconfigure(0, weight=1)
+    tree = ttk.Treeview(card, columns=[c[0] for c in cols], show="headings", style="Admin.Treeview",
+                        selectmode="browse")
+    for title, width in cols:
+        tree.heading(title, text=title.upper())
+        tree.column(title, width=width, minwidth=60, stretch=True, anchor="w" if title in LEFT_COLS else "center")
+    for tag, color in (tags or {}).items():
+        tree.tag_configure(tag, foreground=color)
+    scroll = ctk.CTkScrollbar(card, command=tree.yview)
+    tree.configure(yscrollcommand=scroll.set)
+    tree.grid(row=0, column=0, sticky="nswe", padx=(12, 0), pady=12)
+    scroll.grid(row=0, column=1, sticky="ns", padx=(4, 6), pady=12)
+    return tree
 
-        self._status("Sending code...")
 
-        def worker():
-            # runs in the background so the window doesn't freeze
-            try:
-                email_service.send_and_store_code(email)
-                self._status(f"Code sent to {email}. Check your inbox.")
-            except Exception as exc:
-                self._status(f"Failed to send email: {exc}", colors.ACCENT_RED)
+def fill_table(tree, rows, values_of, tag_of=lambda row: ()):
+    """Replace the table's rows. Each row (a dict with an 'id') becomes (row number, *values_of(row))."""
+    tree.delete(*tree.get_children())
+    for n, row in enumerate(rows, 1):
+        tree.insert("", "end", iid=str(row["id"]), values=(n, *values_of(row)), tags=tag_of(row))
 
-        threading.Thread(target=worker, daemon=True).start()
 
-    def _on_code_changed(self, *_):
-        # verify by itself once 6 digits are typed or pasted
-        code = self.code_var.get().strip()
-        if len(code) == 6 and code.isdigit() and code != self._last_checked:
-            self._last_checked = code
-            self.handle_verify_code()
-
-    def handle_verify_code(self):
-        code = self.code_var.get().strip()
-        if not code:
-            return self.error_label.configure(text="Please enter the verification code.")
-        ok, message = email_service.verify_code(self.get_email(), code)
-        self.error_label.configure(text="" if ok else message)
-        self._status(message, colors.SUCCESS_GREEN if ok else colors.ACCENT_RED)
-
-    def done(self, message, then, delay=1500):
-        # success: show the message in green, then run `then` (close or go to login)
-        self.error_label.configure(text="")
-        self._status(message, colors.SUCCESS_GREEN)
-        self.after(delay, then)
+def selected_id(tree, what):
+    """Selected row's id, or None after telling the user to pick one."""
+    if not tree.selection():
+        messagebox.showinfo("No selection", f"Please select {what} first.")
+        return None
+    return tree.selection()[0]

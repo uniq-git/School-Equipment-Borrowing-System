@@ -1,67 +1,75 @@
 import customtkinter as ctk
 from tkinter import ttk, messagebox
 
-from ui import colors
-from ui.helpers import button, goto_login, label
-from database import get_connection
+import auth
 import borrow_service
 import equipment_service
-import auth
+from database import get_connection
+from ui import colors
 
 ROLE_OPTIONS = ["Admin", "Student", "Teacher", "Staff"]
+GREEN, GREEN_H, RED, RED_H = colors.SUCCESS_GREEN, "#166838", colors.ACCENT_RED, "#b52a48"
+BLUE, BLUE_H = colors.BUTTON_BLUE, colors.BUTTON_BLUE_HOVER
 
-BLUE = (colors.BUTTON_BLUE, colors.BUTTON_BLUE_HOVER)
-GREEN = (colors.SUCCESS_GREEN, "#166838")
-RED = (colors.ACCENT_RED, "#b52a48")
+# Treeview layouts: (column, width) pairs
+USER_COLS = (("id", 40), ("full_name", 160), ("student_number", 120), ("email", 200),
+             ("role", 80), ("email_verified", 100), ("status", 80), ("created_at", 140))
+EQUIP_COLS = (("id", 40), ("name", 200), ("category", 140), ("quantity", 70), ("available", 80),
+              ("condition", 100), ("added_by", 160), ("created_at", 140))
+PENDING_COLS = (("id", 40), ("borrower", 160), ("role", 80), ("equipment", 200),
+                ("quantity", 70), ("request_date", 140), ("proposed_due_date", 120))
+ACTIVE_COLS = (("id", 40), ("borrower", 160), ("role", 80), ("equipment", 200), ("quantity", 70),
+               ("borrowed_on", 140), ("due_date", 110), ("approved_by", 160))
 
-def execute(sql, params):
-    """Run one UPDATE/DELETE and save it."""
+
+def db(sql, params=(), fetch=False):
+    """Run one query; return rows if fetch=True, else commit."""
     conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute(sql, params)
-    conn.commit()
-    cursor.close()
-    conn.close()
- 
- 
-def toolbar(tab, *buttons):
-    """Row of buttons above a table. Each button is (text, command) or (text, command, style)."""
-    bar = ctk.CTkFrame(tab, fg_color=colors.BG_LIGHT)
-    bar.pack(fill="x", pady=(8, 4))
-    for text, command, *style in buttons:
-        tool(bar, text, command, *style)
+    cur = conn.cursor(dictionary=True)
+    try:
+        cur.execute(sql, params)
+        if fetch:
+            return cur.fetchall()
+        conn.commit()
+    finally:
+        cur.close()
+        conn.close()
+
+
+def toolbar(parent, buttons, pady=(4, 4)):
+    """buttons: (text, command, width, fg, hover) tuples; fg/hover optional."""
+    bar = ctk.CTkFrame(parent, fg_color=colors.BG_LIGHT)
+    bar.pack(fill="x", pady=pady)
+    for b in buttons:
+        text, cmd, w, fg, hover = b + (100, None, None)[len(b) - 2:]  # fill in defaults
+        kw = {"fg_color": fg, "hover_color": hover} if fg else {}
+        ctk.CTkButton(bar, text=text, width=w, command=cmd, **kw).pack(side="left", padx=(0, 6))
     return bar
- 
- 
-def tool(bar, text, command, style=BLUE):
-    button(bar, text, command, w=max(100, len(text) * 9), h=28, fg=style[0], hover=style[1]).pack(side="left", padx=(0, 6))
- 
- 
-def make_tree(tab, columns, widths):
-    """Create a table with the given column names and widths."""
-    tree = ttk.Treeview(tab, columns=columns, show="headings", height=16)
-    for col, width in zip(columns, widths):
+
+
+def table(parent, cols, height=16):
+    tree = ttk.Treeview(parent, columns=[c for c, _ in cols], show="headings", height=height)
+    for col, width in cols:
         tree.heading(col, text=col.replace("_", " ").title())
         tree.column(col, width=width, anchor="center")
     tree.pack(fill="both", expand=True, pady=10)
     return tree
- 
- 
-def fill_tree(tree, rows):
-    """Replace the table content. rows = iterable of (row id, tuple of cell values)."""
+
+
+def fill(tree, rows):
+    """rows: (iid, values...) tuples; the first value shown is a 1-based row number."""
     tree.delete(*tree.get_children())
-    for iid, values in rows:
-        tree.insert("", "end", iid=str(iid), values=values)
- 
- 
+    for n, (iid, *values) in enumerate(rows, start=1):
+        tree.insert("", "end", iid=str(iid), values=(n, *values))
+
+
 def selected(tree, what):
-    """Return the selected row id, or show a hint and return None."""
-    rows = tree.selection()
-    if not rows:
+    sel = tree.selection()
+    if not sel:
         messagebox.showinfo("No selection", f"Please select {what} first.")
-    return rows[0] if rows else None
- 
- 
+    return sel[0] if sel else None
+
+
 class AdminDashboard(ctk.CTk):
     def __init__(self, user):
         super().__init__()
@@ -69,131 +77,113 @@ class AdminDashboard(ctk.CTk):
         self.title("ICCT Equipment Borrowing System")
         self.geometry("1060x620")
         self.configure(fg_color=colors.BG_LIGHT)
- 
+
+        header = ctk.CTkFrame(self, fg_color=colors.NAVY_DARK, height=70, corner_radius=0)
+        header.pack(fill="x")
+        ctk.CTkLabel(header, text="Admin Dashboard", font=ctk.CTkFont(size=20, weight="bold"),
+                     text_color="white").pack(side="left", padx=20, pady=15)
+        ctk.CTkLabel(header, text=f"Signed in as {user['full_name']} ({user['role']})",
+                     font=ctk.CTkFont(size=12), text_color="#c7cede").pack(side="left", padx=10)
+        ctk.CTkButton(header, text="Log Out", width=100, fg_color=RED, hover_color=RED_H,
+                      command=self.logout).pack(side="right", padx=20, pady=15)
+
         style = ttk.Style()
         style.theme_use("default")
         style.configure("Treeview", rowheight=28, font=("Segoe UI", 10))
         style.configure("Treeview.Heading", font=("Segoe UI", 10, "bold"))
- 
-        header = ctk.CTkFrame(self, fg_color=colors.NAVY_DARK, height=70, corner_radius=0)
-        header.pack(fill="x")
-        label(header, "Admin Dashboard", 20, True, "white").pack(side="left", padx=20, pady=15)
-        button(header, "Log Out", lambda: goto_login(self), h=28, fg=RED[0], hover=RED[1]).pack(side="right", padx=20, pady=15)
- 
-        self.tabview = self._tabs(self)
-        if user["role"] == "Admin":  # only Admin manages users
-            self.tabview.add("User Management")
-            self._build_user_management_tab(self.tabview.tab("User Management"))
-        self.tabview.add("Equipment")
-        self._build_equipment_tab(self.tabview.tab("Equipment"))
-        self.tabview.add("Borrowing")
-        self._build_borrowing_tab(self.tabview.tab("Borrowing"))
- 
+
+        tabs = self._tabs(self)
+        tabs.pack(fill="both", expand=True, padx=20, pady=(14, 20))
+        if user["role"] == "Admin":
+            self._build_users(self._add_tab(tabs, "User Management"))
+        self._build_equipment(self._add_tab(tabs, "Equipment"))
+        sub = self._tabs(self._add_tab(tabs, "Borrowing"))
+        sub.pack(fill="both", expand=True)
+        self._build_pending(self._add_tab(sub, "Pending Requests"))
+        self._build_active(self._add_tab(sub, "Active Transactions"))
+
     @staticmethod
     def _tabs(parent):
-        tabs = ctk.CTkTabview(parent, fg_color=colors.BG_LIGHT, segmented_button_selected_color=colors.BUTTON_BLUE)
-        tabs.pack(fill="both", expand=True, padx=20, pady=(14, 20))
-        return tabs
- 
+        return ctk.CTkTabview(parent, fg_color=colors.BG_LIGHT, segmented_button_selected_color=BLUE)
+
+    @staticmethod
+    def _add_tab(tabview, name):
+        tabview.add(name)
+        return tabview.tab(name)
+
     # ---------- User Management (Admin only) ----------
- 
-    def _build_user_management_tab(self, tab):
-        bar = toolbar(
-            tab,
-            ("Add User", self.open_add_user),
+
+    def _build_users(self, tab):
+        bar = toolbar(tab, [
+            ("Add User", self.open_add_user, 100, BLUE, BLUE_H),
             ("Refresh", self.load_users),
-            ("Activate", lambda: self.update_status("active"), GREEN),
-            ("Deactivate", lambda: self.update_status("inactive"), RED),
-            ("Delete User", self.delete_selected_user, RED),
-        )
-        label(bar, "Set role:").pack(side="left", padx=(14, 6))
+            ("Activate", lambda: self.update_user("status", "active"), 100, GREEN, GREEN_H),
+            ("Deactivate", lambda: self.update_user("status", "inactive"), 100, RED, RED_H),
+            ("Delete User", self.delete_user, 100, RED, RED_H),
+        ])
+        ctk.CTkLabel(bar, text="Set role:", text_color=colors.TEXT_DARK).pack(side="left", padx=(14, 6))
         self.role_var = ctk.StringVar(value="Student")
-        ctk.CTkOptionMenu(bar, values=ROLE_OPTIONS, variable=self.role_var, width=110).pack(side="left", padx=(0, 6))
-        tool(bar, "Apply Role", self.update_role)
- 
-        self.tree = make_tree(
-            tab, ("id", "full_name", "student_number", "email", "role", "email_verified", "status", "created_at"),
-            (40, 160, 120, 200, 80, 100, 80, 140))
+        ctk.CTkOptionMenu(bar, values=ROLE_OPTIONS, variable=self.role_var, width=110).pack(side="left")
+        ctk.CTkButton(bar, text="Apply Role", width=100,
+                      command=lambda: self.update_user("role", self.role_var.get())).pack(side="left", padx=6)
+        self.tree = table(tab, USER_COLS)
         self.load_users()
- 
+
     def open_add_user(self):
         from ui.add_user import AddUserDialog
         AddUserDialog(self)
- 
+
     def load_users(self):
-        conn = get_connection()
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT * FROM users ORDER BY created_at DESC")
-        users = cursor.fetchall()
-        cursor.close()
-        conn.close()
-        fill_tree(self.tree, ((u["id"], (
-            n, u["full_name"], u["student_number"], u["email"], u["role"],
-            "Yes" if u["email_verified"] else "No", u["status"], u["created_at"])) for n, u in enumerate(users, 1)))
- 
-    def update_status(self, status):
-        user_id = selected(self.tree, "a user")
-        if not user_id:
+        fill(self.tree, [(u["id"], u["full_name"], u["student_number"], u["email"], u["role"],
+                          "Yes" if u["email_verified"] else "No", u["status"], u["created_at"])
+                         for u in db("SELECT * FROM users ORDER BY created_at DESC", fetch=True)])
+
+    def update_user(self, field, value):
+        uid = selected(self.tree, "a user")
+        if not uid:
             return
-        if int(user_id) == self.user["id"] and status != "active":
+        own = int(uid) == self.user["id"]
+        if own and field == "status" and value != "active":
             return messagebox.showerror("Not Allowed", "You cannot deactivate your own account while logged in.")
-        execute("UPDATE users SET status = %s WHERE id = %s", (status, user_id))
-        self.load_users()
- 
-    def update_role(self):
-        user_id = selected(self.tree, "a user")
-        if not user_id:
-            return
-        if int(user_id) == self.user["id"] and self.role_var.get() != self.user["role"]:
+        if own and field == "role" and value != self.user["role"]:
             return messagebox.showerror("Not Allowed", "You cannot change your own role while logged in.")
-        execute("UPDATE users SET role = %s WHERE id = %s", (self.role_var.get(), user_id))
+        db(f"UPDATE users SET {field} = %s WHERE id = %s", (value, uid))  # field is hard-coded above
         self.load_users()
- 
-    def delete_selected_user(self):
-        user_id = selected(self.tree, "a user")
-        if not user_id:
+
+    def delete_user(self):
+        uid = selected(self.tree, "a user")
+        if not uid:
             return
-        if int(user_id) == self.user["id"]:
+        if int(uid) == self.user["id"]:
             return messagebox.showerror("Cannot Delete", "You cannot delete your own account while logged in.")
- 
-        full_name = self.tree.item(user_id, "values")[1]
-        if not messagebox.askyesno("Confirm Delete", f"Permanently delete {full_name}'s account? This cannot be undone."):
-            return
-        ok, message = auth.delete_user(user_id)
-        if ok:
-            self.load_users()
-        else:
-            messagebox.showerror("Delete Failed", message)
- 
+        name = self.tree.item(uid, "values")[1]
+        if messagebox.askyesno("Confirm Delete", f"Permanently delete {name}'s account? This cannot be undone."):
+            ok, msg = auth.delete_user(uid)
+            self.load_users() if ok else messagebox.showerror("Delete Failed", msg)
+
     # ---------- Equipment (Admin and Staff) ----------
- 
-    def _build_equipment_tab(self, tab):
-        buttons = [
-            ("Register Equipment", self.open_add_equipment),
-            ("Refresh", self.load_equipment),
-            ("Delete Selected", self.delete_selected_equipment, RED),
-        ]
-        # Staff can borrow through this screen; Admin only manages the catalog and approvals.
-        if self.user["role"] == "Staff":
-            buttons.append(("Request to Borrow", self.open_request_equipment))
-        toolbar(tab, *buttons)
- 
-        self.equipment_tree = make_tree(
-            tab, ("id", "name", "category", "quantity", "available", "condition", "added_by", "created_at"),
-            (40, 200, 140, 70, 80, 100, 160, 140))
+
+    def _build_equipment(self, tab):
+        buttons = [("Register Equipment", self.open_add_equipment, 150, BLUE, BLUE_H),
+                   ("Refresh", self.load_equipment),
+                   ("Delete Selected", self.delete_equipment, 130, RED, RED_H)]
+        if self.user["role"] == "Staff":  # Staff can borrow; Admin only manages
+            buttons.append(("Request to Borrow", self.request_equipment, 150, BLUE, BLUE_H))
+        toolbar(tab, buttons)
+        self.equipment_tree = table(tab, EQUIP_COLS)
         self.load_equipment()
- 
+
     def open_add_equipment(self):
         from ui.add_equipment import AddEquipmentDialog
         AddEquipmentDialog(self, self.user)
- 
+
     def load_equipment(self):
-        fill_tree(self.equipment_tree, ((i["id"], (
-            n, i["name"], i["category"], i["quantity"], borrow_service.get_available_quantity(i["id"]),
-            i["condition_status"], i["added_by_name"] or "-", i["created_at"]))
-            for n, i in enumerate(equipment_service.get_all_equipment(), 1)))
- 
-    def open_request_equipment(self):
+        fill(self.equipment_tree,
+             [(i["id"], i["name"], i["category"], i["quantity"], borrow_service.get_available_quantity(i["id"]),
+               i["condition_status"], i["added_by_name"] or "-", i["created_at"])
+              for i in equipment_service.get_all_equipment()])
+
+    def request_equipment(self):
         item_id = selected(self.equipment_tree, "an equipment item")
         if not item_id:
             return
@@ -203,76 +193,69 @@ class AdminDashboard(ctk.CTk):
         available = borrow_service.get_available_quantity(item["id"])
         if available <= 0:
             return messagebox.showinfo("Unavailable", "There are no available units of this equipment right now.")
- 
         from ui.borrow import RequestEquipmentDialog
         RequestEquipmentDialog(self, self.user, item, available,
-                               on_success=lambda: (self.load_equipment(), self.load_pending_requests()))
- 
-    def delete_selected_equipment(self):
+                               on_success=lambda: (self.load_equipment(), self.load_pending()))
+
+    def delete_equipment(self):
         item_id = selected(self.equipment_tree, "an equipment item")
         if item_id and messagebox.askyesno("Confirm Delete", "Remove this equipment item? This cannot be undone."):
             equipment_service.delete_equipment(item_id)
             self.load_equipment()
- 
+
     # ---------- Borrowing (Admin and Staff) ----------
- 
-    def _build_borrowing_tab(self, tab):
-        sub = self._tabs(tab)
-        sub.pack_configure(padx=0, pady=0)
- 
-        sub.add("Pending Requests")
-        pending = sub.tab("Pending Requests")
-        toolbar(pending, ("Refresh", self.load_pending_requests), ("Approve", self.open_approve_dialog, GREEN),
-                ("Deny", self.deny_selected_request, RED))
-        self.pending_tree = make_tree(
-            pending, ("id", "borrower", "role", "equipment", "quantity", "request_date", "proposed_due_date"),
-            (40, 160, 80, 200, 70, 140, 120))
-        self.load_pending_requests()
- 
-        sub.add("Active Transactions")
-        active = sub.tab("Active Transactions")
-        toolbar(active, ("Refresh", self.load_active_transactions))
-        self.active_tree = make_tree(
-            active, ("id", "borrower", "role", "equipment", "quantity", "borrowed_on", "due_date", "approved_by"),
-            (40, 160, 80, 200, 70, 140, 110, 160))
-        self.load_active_transactions()
- 
-    def load_pending_requests(self):
-        fill_tree(self.pending_tree, ((r["id"], (
-            n, r["borrower_name"], r["borrower_role"], r["equipment_name"], r["quantity"],
-            r["request_date"], r["due_date"] or "-")) for n, r in enumerate(borrow_service.get_pending_requests(), 1)))
- 
-    def load_active_transactions(self):
-        fill_tree(self.active_tree, ((r["id"], (
-            n, r["borrower_name"], r["borrower_role"], r["equipment_name"], r["quantity"],
-            r["request_date"], r["due_date"] or "-", r["approved_by_name"] or "-"))
-            for n, r in enumerate(borrow_service.get_active_transactions(), 1)))
- 
-    def _selected_pending_request(self):
-        request_id = selected(self.pending_tree, "a pending request")
-        if not request_id:
+
+    def _build_pending(self, tab):
+        toolbar(tab, [("Refresh", self.load_pending),
+                      ("Approve", self.approve_request, 100, GREEN, GREEN_H),
+                      ("Deny", self.deny_request, 100, RED, RED_H)], pady=(8, 4))
+        self.pending_tree = table(tab, PENDING_COLS, 14)
+        self.load_pending()
+
+    def load_pending(self):
+        fill(self.pending_tree, [(r["id"], r["borrower_name"], r["borrower_role"], r["equipment_name"],
+                                  r["quantity"], r["request_date"], r["due_date"] or "-")
+                                 for r in borrow_service.get_pending_requests()])
+
+    def _pending_request(self):
+        rid = selected(self.pending_tree, "a pending request")
+        if not rid:
             return None
-        request = borrow_service.get_request_by_id(int(request_id))
-        if not request or request["status"] != "Pending":
+        req = borrow_service.get_request_by_id(int(rid))
+        if not req or req["status"] != "Pending":
             messagebox.showinfo("Not Available", "This request is no longer pending.")
-            self.load_pending_requests()
+            self.load_pending()
             return None
-        return request
- 
-    def open_approve_dialog(self):
-        request = self._selected_pending_request()
-        if request:
+        return req
+
+    def approve_request(self):
+        req = self._pending_request()
+        if req:
             from ui.borrow import ApproveRequestDialog
-            ApproveRequestDialog(self, self.user, request, on_success=lambda: (
-                self.load_pending_requests(), self.load_active_transactions(), self.load_equipment()))
- 
-    def deny_selected_request(self):
-        request = self._selected_pending_request()
-        if not request or not messagebox.askyesno(
-                "Confirm Deny", f"Deny the request for '{request['equipment_name']}' from {request['borrower_name']}?"):
-            return
-        ok, message = borrow_service.deny_request(request["id"], self.user["id"])
-        if ok:
-            self.load_pending_requests()
-        else:
-            messagebox.showerror("Deny Failed", message)
+            ApproveRequestDialog(self, self.user, req, on_success=lambda: (
+                self.load_pending(), self.load_active(), self.load_equipment()))
+
+    def deny_request(self):
+        req = self._pending_request()
+        if req and messagebox.askyesno(
+                "Confirm Deny", f"Deny the request for '{req['equipment_name']}' from {req['borrower_name']}?"):
+            ok, msg = borrow_service.deny_request(req["id"], self.user["id"])
+            self.load_pending() if ok else messagebox.showerror("Deny Failed", msg)
+
+    def _build_active(self, tab):
+        toolbar(tab, [("Refresh", self.load_active)], pady=(8, 4))
+        self.active_tree = table(tab, ACTIVE_COLS, 14)
+        self.load_active()
+
+    def load_active(self):
+        fill(self.active_tree, [(r["id"], r["borrower_name"], r["borrower_role"], r["equipment_name"],
+                                 r["quantity"], r["request_date"], r["due_date"] or "-",
+                                 r["approved_by_name"] or "-")
+                                for r in borrow_service.get_active_transactions()])
+
+    # ---------- shared ----------
+
+    def logout(self):
+        self.destroy()
+        from ui.login import LoginWindow
+        LoginWindow().mainloop()
