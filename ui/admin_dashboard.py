@@ -1,29 +1,36 @@
 import customtkinter as ctk
-from tkinter import ttk, messagebox
+from tkinter import messagebox
 
 import auth
 import borrow_service
 import equipment_service
 from database import get_connection
 from ui import colors
+from ui.helpers import (AMBER, build_main, build_sidebar, build_topbar, button, fill_table, fmt_date, label,
+                        selected_id, setup_table_style, show_page as switch_page, table_page, tool_row)
 
 ROLE_OPTIONS = ["Admin", "Student", "Teacher", "Staff"]
-GREEN, GREEN_H, RED, RED_H = colors.SUCCESS_GREEN, "#166838", colors.ACCENT_RED, "#b52a48"
-BLUE, BLUE_H = colors.BUTTON_BLUE, colors.BUTTON_BLUE_HOVER
 
-# Treeview layouts: (column, width) pairs
-USER_COLS = (("id", 40), ("full_name", 160), ("student_number", 120), ("email", 200),
-             ("role", 80), ("email_verified", 100), ("status", 80), ("created_at", 140))
-EQUIP_COLS = (("id", 40), ("name", 200), ("category", 140), ("quantity", 70), ("available", 80),
-              ("condition", 100), ("added_by", 160), ("created_at", 140))
-PENDING_COLS = (("id", 40), ("borrower", 160), ("role", 80), ("equipment", 200),
-                ("quantity", 70), ("request_date", 140), ("proposed_due_date", 120))
-ACTIVE_COLS = (("id", 40), ("borrower", 160), ("role", 80), ("equipment", 200), ("quantity", 70),
-               ("borrowed_on", 140), ("due_date", 110), ("approved_by", 160))
+# Widths are sized to fit the table area at the minimum window width.
+USER_COLS = [("ID", 36), ("Full Name", 145), ("ID Number", 105), ("Email", 185),
+             ("Role", 62), ("Verified", 72), ("Status", 62), ("Created", 93)]
+EQUIPMENT_COLS = [("ID", 36), ("Name", 150), ("Category", 130), ("Quantity", 72), ("Available", 76),
+                  ("Condition", 78), ("Added By", 120), ("Created", 98)]
+PENDING_COLS = [("ID", 36), ("Borrower", 160), ("Role", 80), ("Equipment", 190), ("Qty", 60),
+                ("Requested", 110), ("Due Date", 110)]
+ACTIVE_COLS = [("ID", 36), ("Borrower", 130), ("Role", 70), ("Equipment", 145), ("Qty", 55),
+               ("Borrowed On", 100), ("Due Date", 90), ("Approved By", 125)]
+
+
+def table(parent, cols, tags=None):
+    """table_page, but with a narrow fixed ID column (make_table forces a 60px minimum on every column)."""
+    page, bar, tree = table_page(parent, cols, tags)
+    tree.column("ID", width=cols[0][1], minwidth=cols[0][1], stretch=False)
+    return page, bar, tree
 
 
 def db(sql, params=(), fetch=False):
-    """Run one query; return rows if fetch=True, else commit."""
+    """Run one query: returns the rows when fetch=True, otherwise commits."""
     conn = get_connection()
     cur = conn.cursor(dictionary=True)
     try:
@@ -36,110 +43,75 @@ def db(sql, params=(), fetch=False):
         conn.close()
 
 
-def toolbar(parent, buttons, pady=(4, 4)):
-    """buttons: (text, command, width, fg, hover) tuples; fg/hover optional."""
-    bar = ctk.CTkFrame(parent, fg_color=colors.BG_LIGHT)
-    bar.pack(fill="x", pady=pady)
-    for b in buttons:
-        text, cmd, w, fg, hover = b + (100, None, None)[len(b) - 2:]  # fill in defaults
-        kw = {"fg_color": fg, "hover_color": hover} if fg else {}
-        ctk.CTkButton(bar, text=text, width=w, command=cmd, **kw).pack(side="left", padx=(0, 6))
-    return bar
-
-
-def table(parent, cols, height=16):
-    tree = ttk.Treeview(parent, columns=[c for c, _ in cols], show="headings", height=height)
-    for col, width in cols:
-        tree.heading(col, text=col.replace("_", " ").title())
-        tree.column(col, width=width, anchor="center")
-    tree.pack(fill="both", expand=True, pady=10)
-    return tree
-
-
-def fill(tree, rows):
-    """rows: (iid, values...) tuples; the first value shown is a 1-based row number."""
-    tree.delete(*tree.get_children())
-    for n, (iid, *values) in enumerate(rows, start=1):
-        tree.insert("", "end", iid=str(iid), values=(n, *values))
-
-
-def selected(tree, what):
-    sel = tree.selection()
-    if not sel:
-        messagebox.showinfo("No selection", f"Please select {what} first.")
-    return sel[0] if sel else None
-
-
 class AdminDashboard(ctk.CTk):
     def __init__(self, user):
         super().__init__()
         self.user = user
-        self.title("ICCT Equipment Borrowing System")
-        self.geometry("1060x620")
+        is_admin = user["role"] == "Admin"
+        self.titles = {**({"users": "User Management"} if is_admin else {}),
+                       "equipment": "Equipment", "pending": "Pending Requests", "active": "Active Transactions"}
+
+        self.title("ICCT Colleges Foundation, Inc. - Equipment Borrowing System")
+        self.geometry("1150x700")
+        self.minsize(1120, 620)
         self.configure(fg_color=colors.BG_LIGHT)
+        self.grid_columnconfigure(1, weight=1)
+        self.grid_rowconfigure(0, weight=1)
+        setup_table_style()
 
-        header = ctk.CTkFrame(self, fg_color=colors.NAVY_DARK, height=70, corner_radius=0)
-        header.pack(fill="x")
-        ctk.CTkLabel(header, text="Admin Dashboard", font=ctk.CTkFont(size=20, weight="bold"),
-                     text_color="white").pack(side="left", padx=20, pady=15)
-        ctk.CTkLabel(header, text=f"Signed in as {user['full_name']} ({user['role']})",
-                     font=ctk.CTkFont(size=12), text_color="#c7cede").pack(side="left", padx=10)
-        ctk.CTkButton(header, text="Log Out", width=100, fg_color=RED, hover_color=RED_H,
-                      command=self.logout).pack(side="right", padx=20, pady=15)
+        self.nav = build_sidebar(self, self.titles, self.show_page, user, self.logout, self.open_change_password)
+        main, body = build_main(self)
+        self.title_lbl, self.stat_lbls = build_topbar(main, [
+            ("pending", "Pending", AMBER), ("active", "Borrowed", colors.SUCCESS_GREEN),
+            ("equipment", "Equipment", colors.BUTTON_BLUE)])
 
-        style = ttk.Style()
-        style.theme_use("default")
-        style.configure("Treeview", rowheight=28, font=("Segoe UI", 10))
-        style.configure("Treeview.Heading", font=("Segoe UI", 10, "bold"))
+        self.pages = {}
+        if is_admin:
+            self.pages["users"] = self._build_users(body)
+        self.pages["equipment"] = self._build_equipment(body)
+        self.pages["pending"] = self._build_pending(body)
+        self.pages["active"] = self._build_active(body)
+        self.show_page(next(iter(self.pages)))
 
-        tabs = self._tabs(self)
-        tabs.pack(fill="both", expand=True, padx=20, pady=(14, 20))
-        if user["role"] == "Admin":
-            self._build_users(self._add_tab(tabs, "User Management"))
-        self._build_equipment(self._add_tab(tabs, "Equipment"))
-        sub = self._tabs(self._add_tab(tabs, "Borrowing"))
-        sub.pack(fill="both", expand=True)
-        self._build_pending(self._add_tab(sub, "Pending Requests"))
-        self._build_active(self._add_tab(sub, "Active Transactions"))
+    def show_page(self, key):
+        switch_page(key, self.pages, self.nav, self.title_lbl, self.titles)
 
-    @staticmethod
-    def _tabs(parent):
-        return ctk.CTkTabview(parent, fg_color=colors.BG_LIGHT, segmented_button_selected_color=BLUE)
-
-    @staticmethod
-    def _add_tab(tabview, name):
-        tabview.add(name)
-        return tabview.tab(name)
+    def _stat(self, key, value):
+        self.stat_lbls[key].configure(text=str(value))
 
     # ---------- User Management (Admin only) ----------
 
-    def _build_users(self, tab):
-        bar = toolbar(tab, [
-            ("Add User", self.open_add_user, 100, BLUE, BLUE_H),
-            ("Refresh", self.load_users),
-            ("Activate", lambda: self.update_user("status", "active"), 100, GREEN, GREEN_H),
-            ("Deactivate", lambda: self.update_user("status", "inactive"), 100, RED, RED_H),
-            ("Delete User", self.delete_user, 100, RED, RED_H),
-        ])
-        ctk.CTkLabel(bar, text="Set role:", text_color=colors.TEXT_DARK).pack(side="left", padx=(14, 6))
+    def _build_users(self, parent):
+        page, bar, self.user_tree = table(parent, USER_COLS, tags={"inactive": colors.ACCENT_RED})
+        tool_row(bar, left=[("Add User", self.open_add_user, "blue", 110),
+                            ("Activate", lambda: self.update_user("status", "active"), "green"),
+                            ("Deactivate", lambda: self.update_user("status", "inactive"), "red"),
+                            ("Delete User", self.delete_user, "red")],
+                 right=[("Refresh", self.load_users)], pady=(12, 6))
+        role_row = tool_row(bar, pady=(0, 12))
+        label(role_row, "Set role", color=colors.TEXT_GRAY).pack(side="left", padx=(14, 8))
         self.role_var = ctk.StringVar(value="Student")
-        ctk.CTkOptionMenu(bar, values=ROLE_OPTIONS, variable=self.role_var, width=110).pack(side="left")
-        ctk.CTkButton(bar, text="Apply Role", width=100,
-                      command=lambda: self.update_user("role", self.role_var.get())).pack(side="left", padx=6)
-        self.tree = table(tab, USER_COLS)
+        ctk.CTkOptionMenu(role_row, values=ROLE_OPTIONS, variable=self.role_var, width=140, height=36,
+                          fg_color=colors.ENTRY_BG, button_color=colors.BUTTON_BLUE,
+                          button_hover_color=colors.BUTTON_BLUE_HOVER,
+                          text_color=colors.TEXT_DARK).pack(side="left")
+        button(role_row, "Apply Role", lambda: self.update_user("role", self.role_var.get())).pack(
+            side="left", padx=(8, 12))
         self.load_users()
+        return page
 
     def open_add_user(self):
         from ui.add_user import AddUserDialog
         AddUserDialog(self)
 
     def load_users(self):
-        fill(self.tree, [(u["id"], u["full_name"], u["student_number"], u["email"], u["role"],
-                          "Yes" if u["email_verified"] else "No", u["status"], u["created_at"])
-                         for u in db("SELECT * FROM users ORDER BY created_at DESC", fetch=True)])
+        fill_table(self.user_tree, db("SELECT * FROM users ORDER BY created_at DESC", fetch=True),
+                   lambda u: (u["full_name"], u["student_number"], u["email"], u["role"],
+                              "Yes" if u["email_verified"] else "No", u["status"], fmt_date(u["created_at"])),
+                   lambda u: () if u["status"] == "active" else ("inactive",))
 
     def update_user(self, field, value):
-        uid = selected(self.tree, "a user")
+        uid = selected_id(self.user_tree, "a user")
         if not uid:
             return
         own = int(uid) == self.user["id"]
@@ -147,44 +119,45 @@ class AdminDashboard(ctk.CTk):
             return messagebox.showerror("Not Allowed", "You cannot deactivate your own account while logged in.")
         if own and field == "role" and value != self.user["role"]:
             return messagebox.showerror("Not Allowed", "You cannot change your own role while logged in.")
-        db(f"UPDATE users SET {field} = %s WHERE id = %s", (value, uid))  # field is hard-coded above
+        db(f"UPDATE users SET {field} = %s WHERE id = %s", (value, uid))  # field is hard-coded by the callers
         self.load_users()
 
     def delete_user(self):
-        uid = selected(self.tree, "a user")
+        uid = selected_id(self.user_tree, "a user")
         if not uid:
             return
         if int(uid) == self.user["id"]:
             return messagebox.showerror("Cannot Delete", "You cannot delete your own account while logged in.")
-        name = self.tree.item(uid, "values")[1]
+        name = self.user_tree.item(uid, "values")[1]
         if messagebox.askyesno("Confirm Delete", f"Permanently delete {name}'s account? This cannot be undone."):
             ok, msg = auth.delete_user(uid)
             self.load_users() if ok else messagebox.showerror("Delete Failed", msg)
 
     # ---------- Equipment (Admin and Staff) ----------
 
-    def _build_equipment(self, tab):
-        buttons = [("Register Equipment", self.open_add_equipment, 150, BLUE, BLUE_H),
-                   ("Refresh", self.load_equipment),
-                   ("Delete Selected", self.delete_equipment, 130, RED, RED_H)]
-        if self.user["role"] == "Staff":  # Staff can borrow; Admin only manages
-            buttons.append(("Request to Borrow", self.request_equipment, 150, BLUE, BLUE_H))
-        toolbar(tab, buttons)
-        self.equipment_tree = table(tab, EQUIP_COLS)
+    def _build_equipment(self, parent):
+        page, bar, self.equipment_tree = table(parent, EQUIPMENT_COLS)
+        left = [("Register Equipment", self.open_add_equipment, "blue", 150),
+                ("Delete Selected", self.delete_equipment, "red", 130)]
+        if self.user["role"] == "Staff":  # Staff can borrow; Admin only manages the catalog
+            left.append(("Request to Borrow", self.request_equipment, "blue", 150))
+        tool_row(bar, left=left, right=[("Refresh", self.load_equipment)])
         self.load_equipment()
+        return page
 
     def open_add_equipment(self):
         from ui.add_equipment import AddEquipmentDialog
         AddEquipmentDialog(self, self.user)
 
     def load_equipment(self):
-        fill(self.equipment_tree,
-             [(i["id"], i["name"], i["category"], i["quantity"], borrow_service.get_available_quantity(i["id"]),
-               i["condition_status"], i["added_by_name"] or "-", i["created_at"])
-              for i in equipment_service.get_all_equipment()])
+        rows = equipment_service.get_all_equipment()
+        fill_table(self.equipment_tree, rows,
+                   lambda i: (i["name"], i["category"], i["quantity"], borrow_service.get_available_quantity(i["id"]),
+                              i["condition_status"], i["added_by_name"] or "-", fmt_date(i["created_at"])))
+        self._stat("equipment", len(rows))
 
     def request_equipment(self):
-        item_id = selected(self.equipment_tree, "an equipment item")
+        item_id = selected_id(self.equipment_tree, "an equipment item")
         if not item_id:
             return
         item = next((i for i in equipment_service.get_all_equipment() if i["id"] == int(item_id)), None)
@@ -198,27 +171,29 @@ class AdminDashboard(ctk.CTk):
                                on_success=lambda: (self.load_equipment(), self.load_pending()))
 
     def delete_equipment(self):
-        item_id = selected(self.equipment_tree, "an equipment item")
+        item_id = selected_id(self.equipment_tree, "an equipment item")
         if item_id and messagebox.askyesno("Confirm Delete", "Remove this equipment item? This cannot be undone."):
             equipment_service.delete_equipment(item_id)
             self.load_equipment()
 
     # ---------- Borrowing (Admin and Staff) ----------
 
-    def _build_pending(self, tab):
-        toolbar(tab, [("Refresh", self.load_pending),
-                      ("Approve", self.approve_request, 100, GREEN, GREEN_H),
-                      ("Deny", self.deny_request, 100, RED, RED_H)], pady=(8, 4))
-        self.pending_tree = table(tab, PENDING_COLS, 14)
+    def _build_pending(self, parent):
+        page, bar, self.pending_tree = table(parent, PENDING_COLS)
+        tool_row(bar, left=[("Approve", self.approve_request, "green"), ("Deny", self.deny_request, "red")],
+                 right=[("Refresh", self.load_pending)])
         self.load_pending()
+        return page
 
     def load_pending(self):
-        fill(self.pending_tree, [(r["id"], r["borrower_name"], r["borrower_role"], r["equipment_name"],
-                                  r["quantity"], r["request_date"], r["due_date"] or "-")
-                                 for r in borrow_service.get_pending_requests()])
+        rows = borrow_service.get_pending_requests()
+        fill_table(self.pending_tree, rows,
+                   lambda r: (r["borrower_name"], r["borrower_role"], r["equipment_name"], r["quantity"],
+                              fmt_date(r["request_date"]), fmt_date(r["due_date"])))
+        self._stat("pending", len(rows))
 
     def _pending_request(self):
-        rid = selected(self.pending_tree, "a pending request")
+        rid = selected_id(self.pending_tree, "a pending request")
         if not rid:
             return None
         req = borrow_service.get_request_by_id(int(rid))
@@ -242,18 +217,24 @@ class AdminDashboard(ctk.CTk):
             ok, msg = borrow_service.deny_request(req["id"], self.user["id"])
             self.load_pending() if ok else messagebox.showerror("Deny Failed", msg)
 
-    def _build_active(self, tab):
-        toolbar(tab, [("Refresh", self.load_active)], pady=(8, 4))
-        self.active_tree = table(tab, ACTIVE_COLS, 14)
+    def _build_active(self, parent):
+        page, bar, self.active_tree = table(parent, ACTIVE_COLS)
+        tool_row(bar, right=[("Refresh", self.load_active)])
         self.load_active()
+        return page
 
     def load_active(self):
-        fill(self.active_tree, [(r["id"], r["borrower_name"], r["borrower_role"], r["equipment_name"],
-                                 r["quantity"], r["request_date"], r["due_date"] or "-",
-                                 r["approved_by_name"] or "-")
-                                for r in borrow_service.get_active_transactions()])
+        rows = borrow_service.get_active_transactions()
+        fill_table(self.active_tree, rows,
+                   lambda r: (r["borrower_name"], r["borrower_role"], r["equipment_name"], r["quantity"],
+                              fmt_date(r["request_date"]), fmt_date(r["due_date"]), r["approved_by_name"] or "-"))
+        self._stat("active", len(rows))
 
     # ---------- shared ----------
+
+    def open_change_password(self):
+        from ui.change_password import ChangePasswordDialog
+        ChangePasswordDialog(self, self.user)
 
     def logout(self):
         self.destroy()
