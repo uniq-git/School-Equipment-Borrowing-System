@@ -1,21 +1,40 @@
 """
 Borrowing Transactions service layer.
 
-Workflow: Request -> Approval -> Borrowing Transaction
+Workflow: Request -> Pending -> Approved (Active) -> Returned
 
-A single table (borrow_requests) is used for both the request and, once
-Approved, the active borrowing transaction - there's no separate table
-for transactions. Return handling is a separate feature to be added later,
-so an Approved row is treated as "currently borrowed" for availability
-purposes until that feature exists.
+A single table (borrow_requests) is used for the request, the active
+borrowing transaction and the return - there's no separate table for
+transactions. The row's status tells where it is:
+
+    Pending   - waiting for Admin/Staff
+    Approved  - the equipment is currently borrowed (Active)
+    Denied    - request was rejected
+    Returned  - equipment came back; the row stays for history/reports
+
+Only Approved rows count as "currently borrowed", so the moment a row
+becomes Returned its quantity is available again.
+
+Due-date states (Active / Due Soon / Due Today / Overdue) are NOT saved
+in the database. They are worked out from today's date and the due date
+every time (see get_borrow_state), so they can never go out of date.
 """
 from datetime import datetime, date
 
 from database import get_connection
 
-STATUS_OPTIONS = ["Pending", "Approved", "Denied"]
+STATUS_OPTIONS = ["Pending", "Approved", "Denied", "Returned"]
 
 DATE_FORMAT = "%Y-%m-%d"
+
+# An active borrowing is "Due Soon" when it is due within this many days.
+DUE_SOON_DAYS = 3
+
+# Only these roles may process a return.
+RETURN_ROLES = ("Admin", "Staff")
+
+# Same list as equipment_service.CONDITION_OPTIONS.
+CONDITION_OPTIONS = ["New", "Good", "Fair", "Needs Repair"]
 
 
 def _parse_due_date(due_date_str):
@@ -58,7 +77,8 @@ def get_available_quantity(equipment_id, exclude_request_id=None):
     cursor.close()
     conn.close()
 
-    return equipment["quantity"] - borrowed
+    # Never return a negative number, even if the data is out of sync.
+    return max(0, equipment["quantity"] - int(borrowed))
 
 
 def create_request(user_id, equipment_id, quantity, due_date_str):
@@ -128,8 +148,60 @@ def create_request(user_id, equipment_id, quantity, due_date_str):
     return True, f"Request to borrow '{equipment['name']}' has been submitted."
 
 
-def _select_with_joins(where_clause, params=()):
-    """Shared SELECT for borrow_requests joined with borrower/equipment/approver names."""
+def get_borrow_state(row, today=None):
+    """
+    The status shown to users, worked out from the row and today's date.
+
+    Pending / Denied / Returned are shown as they are. An Approved row is
+    an active borrowing, so it becomes one of:
+        Overdue    - due date has passed
+        Due Today  - due date is today
+        Due Soon   - due within DUE_SOON_DAYS days
+        Active     - anything later
+
+    A Returned row always stays "Returned", so it is never overdue.
+    """
+    if row["status"] != "Approved":
+        return row["status"]
+
+    due_date = row["due_date"]
+    if due_date is None:
+        return "Active"
+    if isinstance(due_date, datetime):
+        due_date = due_date.date()
+
+    today = today or date.today()
+    days_left = (due_date - today).days
+
+    if days_left < 0:
+        return "Overdue"
+    if days_left == 0:
+        return "Due Today"
+    if days_left <= DUE_SOON_DAYS:
+        return "Due Soon"
+    return "Active"
+
+
+def get_days_overdue(row, today=None):
+    """How many days past the due date (0 if it is not overdue)."""
+    today = today or date.today()
+
+    if get_borrow_state(row, today) != "Overdue":
+        return 0
+
+    due_date = row["due_date"]
+    if isinstance(due_date, datetime):
+        due_date = due_date.date()
+
+    return (today - due_date).days
+
+
+def _select_with_joins(where_clause, params=(), order_by="br.created_at DESC"):
+    """
+    Shared SELECT for borrow_requests joined with borrower/equipment/approver names.
+    Every row also gets two extra keys: "state" (Active / Due Soon / Due Today /
+    Overdue / Returned ...) and "days_overdue".
+    """
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
 
@@ -140,18 +212,26 @@ def _select_with_joins(where_clause, params=()):
             borrower.role AS borrower_role,
             eq.name AS equipment_name,
             eq.category AS equipment_category,
-            approver.full_name AS approved_by_name
+            eq.condition_status AS equipment_condition,
+            approver.full_name AS approved_by_name,
+            returner.full_name AS returned_by_name
         FROM borrow_requests br
         JOIN users borrower ON borrower.id = br.user_id
         JOIN equipment eq ON eq.id = br.equipment_id
         LEFT JOIN users approver ON approver.id = br.approved_by
+        LEFT JOIN users returner ON returner.id = br.returned_by
         {where_clause}
-        ORDER BY br.created_at DESC
+        ORDER BY {order_by}
     """, params)
 
     rows = cursor.fetchall()
     cursor.close()
     conn.close()
+
+    today = date.today()
+    for row in rows:
+        row["state"] = get_borrow_state(row, today)
+        row["days_overdue"] = get_days_overdue(row, today)
 
     return rows
 
@@ -162,8 +242,74 @@ def get_pending_requests():
 
 
 def get_active_transactions():
-    """All Approved requests - these are the active borrowing transactions."""
-    return _select_with_joins("WHERE br.status = 'Approved'")
+    """
+    All Approved requests - these are the active borrowing transactions.
+    Returned transactions are NOT included. Earliest due date comes first.
+    """
+    return _select_with_joins("WHERE br.status = 'Approved'", order_by="br.due_date ASC")
+
+
+def get_overdue_transactions():
+    """
+    Active borrowings that are past their due date.
+    Overdue = today is after the due date AND it has not been returned
+    (status is still Approved), so Returned rows can never appear here.
+    """
+    return _select_with_joins(
+        "WHERE br.status = 'Approved' AND br.due_date < %s",
+        (date.today(),),
+        order_by="br.due_date ASC",
+    )
+
+
+def parse_date_range(from_str, to_str):
+    """
+    Turn two optional 'YYYY-MM-DD' strings into (date_from, date_to).
+    A blank box means no limit (None). Raises ValueError with a message
+    that can be shown to the user.
+    """
+    date_from = date_to = None
+
+    if from_str and from_str.strip():
+        try:
+            date_from = _parse_due_date(from_str)
+        except ValueError:
+            raise ValueError("'From' date must be in YYYY-MM-DD format.")
+
+    if to_str and to_str.strip():
+        try:
+            date_to = _parse_due_date(to_str)
+        except ValueError:
+            raise ValueError("'To' date must be in YYYY-MM-DD format.")
+
+    if date_from and date_to and date_from > date_to:
+        raise ValueError("'From' date must not be after the 'To' date.")
+
+    return date_from, date_to
+
+
+def get_borrow_history(date_from=None, date_to=None, returned_only=False):
+    """
+    Borrowing history: every transaction that was approved, whether it is
+    still out (Active/Overdue...) or already Returned. Newest first.
+    Pending and Denied requests are not borrowings, so they are not here
+    (borrowers still see them under My Requests).
+    The optional dates filter by borrow date (the day it was approved).
+    """
+    if returned_only:
+        where = "WHERE br.status = 'Returned'"
+    else:
+        where = "WHERE br.status IN ('Approved', 'Returned')"
+    params = []
+
+    if date_from:
+        where += " AND DATE(br.approved_at) >= %s"
+        params.append(date_from)
+    if date_to:
+        where += " AND DATE(br.approved_at) <= %s"
+        params.append(date_to)
+
+    return _select_with_joins(where, tuple(params), order_by="br.approved_at DESC")
 
 
 def get_requests_for_user(user_id):
@@ -261,3 +407,148 @@ def deny_request(request_id, approved_by_user_id):
         return False, "This request has already been reviewed."
 
     return True, "Request has been denied."
+
+
+def process_return(request_id, processed_by_user_id, return_condition, notes=""):
+    """
+    Process the return of an active (Approved) borrowing.
+
+    What happens:
+      1. The row becomes 'Returned' and stores the return date, who processed
+         it, the returned quantity, the condition and optional notes.
+      2. The equipment's condition is updated to the condition at return.
+      3. The row is NOT deleted - it stays for history and reports.
+
+    Available quantity goes back up by itself: availability only counts
+    'Approved' rows, and this row is no longer Approved.
+
+    The whole return is saved together (one commit), so it can't be
+    half-done. The whole borrowed quantity is returned at once.
+    """
+    if return_condition not in CONDITION_OPTIONS:
+        return False, "Please select the condition of the returned equipment."
+
+    notes = (notes or "").strip()
+    if len(notes) > 255:
+        return False, "Return notes must be 255 characters or less."
+
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    cursor.execute(
+        "SELECT role, status FROM users WHERE id = %s",
+        (processed_by_user_id,)
+    )
+    processor = cursor.fetchone()
+    cursor.close()
+    conn.close()
+
+    if not processor or processor["role"] not in RETURN_ROLES or processor["status"] != "active":
+        return False, "Only an Admin or Staff account can process returns."
+
+    request = get_request_by_id(request_id)
+
+    if not request:
+        return False, "Transaction not found."
+
+    if request["status"] == "Returned":
+        return False, "This equipment has already been returned."
+
+    if request["status"] != "Approved":
+        return False, "Only active borrowings can be returned."
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    # "AND status = 'Approved'" stops the same borrowing from being returned twice.
+    cursor.execute(
+        "UPDATE borrow_requests SET "
+        "status = 'Returned', returned_at = NOW(), returned_by = %s, "
+        "returned_quantity = quantity, return_condition = %s, return_notes = %s "
+        "WHERE id = %s AND status = 'Approved'",
+        (processed_by_user_id, return_condition, notes or None, request_id),
+    )
+
+    if cursor.rowcount == 0:
+        conn.rollback()
+        cursor.close()
+        conn.close()
+        return False, "This borrowing was already returned or is no longer active."
+
+    # Keep the equipment's condition in sync with what was just recorded.
+    cursor.execute(
+        "UPDATE equipment SET condition_status = %s WHERE id = %s",
+        (return_condition, request["equipment_id"]),
+    )
+
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+    message = f"'{request['equipment_name']}' has been returned (condition: {return_condition})."
+    if request["days_overdue"] > 0:
+        message += f" It was returned {request['days_overdue']} day(s) late."
+
+    return True, message
+
+
+def get_report_summary(date_from=None, date_to=None):
+    """
+    Numbers for the Reports screen, taken straight from the database.
+
+    Total / Available / Borrowed / Overdue are the situation right now.
+    Returned counts the transactions returned inside the date range
+    (all of them if no dates are given).
+    """
+    import equipment_service
+
+    today = date.today()
+    items = equipment_service.get_all_equipment()
+
+    # Available uses the same function as the rest of the system.
+    available_units = sum(get_available_quantity(item["id"]) for item in items)
+
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    cursor.execute(
+        "SELECT COUNT(*) AS transactions, COALESCE(SUM(quantity), 0) AS units "
+        "FROM borrow_requests WHERE status = 'Approved'"
+    )
+    borrowed = cursor.fetchone()
+
+    cursor.execute(
+        "SELECT COUNT(*) AS transactions, COALESCE(SUM(quantity), 0) AS units "
+        "FROM borrow_requests WHERE status = 'Approved' AND due_date < %s",
+        (today,),
+    )
+    overdue = cursor.fetchone()
+
+    returned_query = (
+        "SELECT COUNT(*) AS transactions, COALESCE(SUM(returned_quantity), 0) AS units "
+        "FROM borrow_requests WHERE status = 'Returned'"
+    )
+    returned_params = []
+    if date_from:
+        returned_query += " AND DATE(returned_at) >= %s"
+        returned_params.append(date_from)
+    if date_to:
+        returned_query += " AND DATE(returned_at) <= %s"
+        returned_params.append(date_to)
+    cursor.execute(returned_query, tuple(returned_params))
+    returned = cursor.fetchone()
+
+    cursor.close()
+    conn.close()
+
+    return {
+        "total_items": len(items),
+        "total_units": sum(item["quantity"] for item in items),
+        "available_units": available_units,
+        "borrowed_units": int(borrowed["units"]),
+        "borrowed_transactions": int(borrowed["transactions"]),
+        "overdue_units": int(overdue["units"]),
+        "overdue_transactions": int(overdue["transactions"]),
+        "returned_units": int(returned["units"]),
+        "returned_transactions": int(returned["transactions"]),
+    }

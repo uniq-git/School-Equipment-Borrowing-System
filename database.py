@@ -106,22 +106,30 @@ def init_database():
     # Store borrowing requests here. A single row represents the request,
     # and once it is Approved it also serves as the active borrowing
     # transaction (borrower, equipment, dates, who approved it, status).
-    # Return handling will be added later as a separate feature.
+    # When the equipment comes back the same row becomes 'Returned' and the
+    # return details (date, who processed it, quantity, condition, notes)
+    # are saved in the returned_* / return_* columns. The row is never deleted.
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS borrow_requests (
             id INT AUTO_INCREMENT PRIMARY KEY,
             user_id INT NOT NULL,
             equipment_id INT NOT NULL,
             quantity INT NOT NULL DEFAULT 1,
-            status ENUM('Pending', 'Approved', 'Denied') NOT NULL DEFAULT 'Pending',
+            status ENUM('Pending', 'Approved', 'Denied', 'Returned') NOT NULL DEFAULT 'Pending',
             request_date DATETIME DEFAULT CURRENT_TIMESTAMP,
             due_date DATE,
             approved_by INT,
             approved_at DATETIME,
+            returned_at DATETIME NULL,
+            returned_by INT NULL,
+            returned_quantity INT NULL,
+            return_condition ENUM('New', 'Good', 'Fair', 'Needs Repair') NULL,
+            return_notes VARCHAR(255) NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
             FOREIGN KEY (equipment_id) REFERENCES equipment(id) ON DELETE CASCADE,
-            FOREIGN KEY (approved_by) REFERENCES users(id) ON DELETE SET NULL
+            FOREIGN KEY (approved_by) REFERENCES users(id) ON DELETE SET NULL,
+            FOREIGN KEY (returned_by) REFERENCES users(id) ON DELETE SET NULL
         )
     """)
 
@@ -145,6 +153,69 @@ def init_database():
             "Admin",
         ),
     )
+
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+    # Make sure an older database also gets the return columns.
+    upgrade_database()
+
+
+# Columns added for Return Transactions: (column name, definition).
+RETURN_COLUMNS = [
+    ("returned_at", "DATETIME NULL"),
+    ("returned_by", "INT NULL"),
+    ("returned_quantity", "INT NULL"),
+    ("return_condition", "ENUM('New', 'Good', 'Fair', 'Needs Repair') NULL"),
+    ("return_notes", "VARCHAR(255) NULL"),
+]
+
+
+def upgrade_database():
+    """
+    Upgrade an existing borrow_requests table so it supports returns.
+    Safe to run many times: it only changes what is still missing and
+    it never deletes or rewrites existing borrowing records.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT COLUMN_NAME, COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS "
+        "WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'borrow_requests'",
+        (config.DB_NAME,),
+    )
+    existing = {}
+    for name, column_type in cursor.fetchall():
+        if isinstance(column_type, (bytes, bytearray)):
+            column_type = column_type.decode()
+        existing[name] = column_type
+
+    # The table does not exist yet, so there is nothing to upgrade.
+    if not existing:
+        cursor.close()
+        conn.close()
+        return
+
+    # 1. Allow the new 'Returned' status.
+    if "Returned" not in existing.get("status", ""):
+        cursor.execute(
+            "ALTER TABLE borrow_requests MODIFY status "
+            "ENUM('Pending', 'Approved', 'Denied', 'Returned') "
+            "NOT NULL DEFAULT 'Pending'"
+        )
+
+    # 2. Add the return columns that are missing.
+    for name, definition in RETURN_COLUMNS:
+        if name not in existing:
+            cursor.execute(f"ALTER TABLE borrow_requests ADD COLUMN {name} {definition}")
+
+            if name == "returned_by":
+                cursor.execute(
+                    "ALTER TABLE borrow_requests ADD FOREIGN KEY (returned_by) "
+                    "REFERENCES users(id) ON DELETE SET NULL"
+                )
 
     conn.commit()
     cursor.close()

@@ -231,3 +231,33 @@ def delete_equipment(equipment_id):
     conn.commit()
     cursor.close()
     conn.close()
+
+
+def get_condition_summary():
+    """
+    How much equipment is in each condition, for the Reports screen.
+    Returns a list of (condition, number of items, number of units),
+    always in the order New, Good, Fair, Needs Repair.
+    """
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    cursor.execute(
+        "SELECT condition_status, COUNT(*) AS items, COALESCE(SUM(quantity), 0) AS units "
+        "FROM equipment GROUP BY condition_status"
+    )
+    found = {row["condition_status"]: row for row in cursor.fetchall()}
+
+    cursor.close()
+    conn.close()
+
+    summary = []
+    for condition in CONDITION_OPTIONS:
+        row = found.get(condition)
+        summary.append((
+            condition,
+            int(row["items"]) if row else 0,
+            int(row["units"]) if row else 0,
+        ))
+
+    return summary
