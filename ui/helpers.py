@@ -1,14 +1,17 @@
 # Shared UI helpers: dashboards (sidebar, tables) and auth screens (login / register / forgot password)
+import calendar
 import os
 import threading
+import tkinter as tk
+from datetime import date, datetime
+
 import customtkinter as ctk
 from tkinter import messagebox, ttk
 from PIL import Image
 
 from ui import colors
 from ui.left_panel import ASSETS_DIR, build_left_panel
-import auth
-import email_service
+from services import auth, email_service
 
 SIDEBAR_W, NAV_TEXT, NAV_ACTIVE, NAV_HOVER = 250, "#c7cede", "#1f3357", "#1a2b49"
 RED_HOVER, GREEN_HOVER, SELECT_BG, AMBER = "#b52a48", "#166838", "#dbe4f3", "#b7791f"
@@ -47,7 +50,7 @@ def fmt_date(value):
 
 # Window Layout
 
-def build_sidebar(window, nav_items, on_select, user, on_logout, on_change_password=None):
+def build_sidebar(window, nav_items, on_select, user, on_logout, on_change_password=None, menu_title="MENU"):
     """Navy sidebar with logo, nav buttons, user card and Log Out. Returns {key: nav button}."""
     side = ctk.CTkFrame(window, fg_color=colors.NAVY_DARK, corner_radius=0, width=SIDEBAR_W)
     side.grid(row=0, column=0, sticky="nswe")
@@ -57,34 +60,36 @@ def build_sidebar(window, nav_items, on_select, user, on_logout, on_change_passw
     logo = os.path.join(ASSETS_DIR, "logo.png")
     if os.path.exists(logo):
         img = Image.open(logo)
-        window._logo = ctk.CTkImage(img, img, size=(84, 84))  # keep a reference so it isn't garbage collected
-        ctk.CTkLabel(side, image=window._logo, text="").pack(pady=(26, 10))
+        window._logo = ctk.CTkImage(img, img, size=(120, 120))  # keep a reference so it isn't garbage collected
+        ctk.CTkLabel(side, image=window._logo, text="").pack(pady=(12, 4))
     label(side, "ICCT Colleges\nFoundation, Inc.", 15, True, "white").pack(pady=(0 if os.path.exists(logo) else 30, 0))
-    label(side, "Equipment Borrowing System", 11, color=NAV_TEXT).pack(pady=(4, 10))
+    label(side, "Equipment Borrowing System", 11, color=NAV_TEXT).pack(pady=(2, 6))
     ctk.CTkFrame(side, fg_color=colors.ACCENT_RED, width=50, height=3, corner_radius=2).pack()
 
+    bottom = ctk.CTkFrame(side, fg_color="transparent")
+    bottom.pack(side="bottom", fill="x", padx=16, pady=12)
+    card = ctk.CTkFrame(bottom, fg_color=NAV_ACTIVE, corner_radius=4)
+    card.pack(fill="x", pady=(0, 6))
+    label(card, user["full_name"], 13, True, "white", anchor="w", wraplength=SIDEBAR_W - 70,
+          justify="left").pack(fill="x", padx=14, pady=(6, 0))
+    label(card, user["role"], 11, color=NAV_TEXT, anchor="w").pack(fill="x", padx=14, pady=(0, 0))
+    label(card, f"ID: {user['student_number']}", 11, True, "white", anchor="w").pack(fill="x", padx=14, pady=(0, 6))
+    if on_change_password:
+        button(bottom, "Change Password", on_change_password, w=0, h=32, fg="transparent", hover=NAV_HOVER,
+               border_width=1, border_color="#3a4a6b", text_color="white").pack(fill="x")
+    button(bottom, "Log Out", on_logout, w=0, h=32, fg=colors.ACCENT_RED, hover=RED_HOVER,
+           font=ctk.CTkFont(size=13)).pack(fill="x", pady=(8 if on_change_password else 0, 0))
+
     nav = ctk.CTkFrame(side, fg_color="transparent")
-    nav.pack(fill="x", padx=16, pady=(30, 0))
-    label(nav, "MENU", 10, True, "#7f8ba6", anchor="w").pack(fill="x", padx=8, pady=(0, 6))
+    nav.pack(fill="x", padx=16, pady=(14, 0))
+    label(nav, menu_title, 10, True, "#7f8ba6", anchor="w").pack(fill="x", padx=8, pady=(0, 6))
     buttons = {}
     for key, title in nav_items.items():
-        buttons[key] = button(nav, title, lambda k=key: on_select(k), h=36, corner_radius=3,
+        buttons[key] = button(nav, title, lambda k=key: on_select(k), h=32, corner_radius=3,
                               fg="transparent", hover=NAV_HOVER, text_color=NAV_TEXT,
                               anchor="w", font=ctk.CTkFont(size=13))
         buttons[key].pack(fill="x", pady=1)
 
-    bottom = ctk.CTkFrame(side, fg_color="transparent")
-    bottom.pack(side="bottom", fill="x", padx=16, pady=18)
-    card = ctk.CTkFrame(bottom, fg_color=NAV_ACTIVE, corner_radius=4)
-    card.pack(fill="x", pady=(0, 10))
-    label(card, user["full_name"], 13, True, "white", anchor="w", wraplength=SIDEBAR_W - 70,
-          justify="left").pack(fill="x", padx=14, pady=(10, 0))
-    label(card, user["role"], 11, color=NAV_TEXT, anchor="w").pack(fill="x", padx=14, pady=(0, 10))
-    if on_change_password:
-        button(bottom, "Change Password", on_change_password, w=0, fg="transparent", hover=NAV_HOVER,
-               border_width=1, border_color="#3a4a6b", text_color="white").pack(fill="x")
-    button(bottom, "Log Out", on_logout, w=0, fg=colors.ACCENT_RED, hover=RED_HOVER,
-           font=ctk.CTkFont(size=13)).pack(fill="x", pady=(8 if on_change_password else 0, 0))
     return buttons
 
 
@@ -173,9 +178,9 @@ def setup_table_style():
     style.theme_use("clam")
     style.configure("Admin.Treeview", background=colors.CARD_WHITE, fieldbackground=colors.CARD_WHITE,
                     foreground=colors.TEXT_DARK, rowheight=30, borderwidth=0, relief="flat",
-                    font=("Segoe UI", 10))
+                    font=("Arial", 10))
     style.configure("Admin.Treeview.Heading", background=colors.BG_LIGHT, foreground=colors.TEXT_GRAY,
-                    font=("Segoe UI", 9, "bold"), relief="flat", borderwidth=0, padding=(6, 10))
+                    font=("Arial", 9, "bold"), relief="flat", borderwidth=0, padding=(6, 10))
     style.map("Admin.Treeview", background=[("selected", SELECT_BG)],
               foreground=[("selected", colors.TEXT_DARK)])
     style.map("Admin.Treeview.Heading", background=[("active", colors.BG_LIGHT)])
@@ -203,11 +208,13 @@ def make_table(page, cols, tags=None):
     return tree
 
 
-def fill_table(tree, rows, values_of, tag_of=lambda row: ()):
-    """Replace the table's rows. Each row (a dict with an 'id') becomes (row number, *values_of(row))."""
+def fill_table(tree, rows, values_of, tag_of=lambda row: (), show_id=False):
+    """Replace the table's rows. Each row (a dict with an 'id') becomes (row number, *values_of(row)).
+    With show_id=True the first column shows the row's real database id instead of the row number."""
     tree.delete(*tree.get_children())
     for n, row in enumerate(rows, 1):
-        tree.insert("", "end", iid=str(row["id"]), values=(n, *values_of(row)), tags=tag_of(row))
+        tree.insert("", "end", iid=str(row["id"]), values=(row["id"] if show_id else n, *values_of(row)),
+                    tags=tag_of(row))
 
 
 def selected_id(tree, what):
@@ -310,6 +317,11 @@ class Fields:
         btn.pack(side="left", padx=(6, 0))
         return entry
 
+    def date(self, text, min_date=None, initial=None, gap=None):
+        """Labelled date field that opens a calendar (no typing). Returns the DatePicker; .get() gives YYYY-MM-DD."""
+        self.label(text, gap)
+        return self.place(DatePicker(self.card, width=300, height=self.h, min_date=min_date, initial=initial))
+
     def error(self, pady=(8, 0)):
         return self.place(ctk.CTkLabel(self.card, text="", text_color=colors.ACCENT_RED, font=ctk.CTkFont(size=12),
                                        wraplength=300, justify="left"), pady)
@@ -317,6 +329,138 @@ class Fields:
     def submit(self, text, command, h=40, pady=(14, 10)):
         return self.place(button(self.card, text, command, w=300, h=h,
                                  font=ctk.CTkFont(size=14, weight="bold")), pady)
+
+
+class DatePicker(ctk.CTkFrame):
+    """A date field that opens a small month calendar instead of making the user type.
+    get() returns 'YYYY-MM-DD' (or '' when nothing is picked); days before min_date cannot be chosen."""
+
+    DISABLED_TEXT = "#b4bac4"
+
+    def __init__(self, parent, width=300, height=34, min_date=None, initial=None, placeholder="Select a date"):
+        super().__init__(parent, width=width, height=height, fg_color=colors.ENTRY_BG, border_width=2,
+                         border_color=colors.BORDER_GRAY, corner_radius=6)
+        self.pack_propagate(False)
+        self.min_date, self.value, self.popup = min_date, None, None
+        self.placeholder = placeholder
+        self.text = ctk.CTkLabel(self, text=placeholder, anchor="w", text_color=colors.TEXT_GRAY,
+                                 font=ctk.CTkFont(size=13))
+        self.text.pack(side="left", fill="both", expand=True, padx=(10, 0))
+        self.arrow = ctk.CTkButton(self, text="\u25be", width=36, corner_radius=4, fg_color=colors.BUTTON_BLUE,
+                                   hover_color=colors.BUTTON_BLUE_HOVER, command=self.toggle)
+        self.arrow.pack(side="right", fill="y", padx=3, pady=3)
+        for w in (self, self.text):
+            w.bind("<Button-1>", lambda _e: self.toggle())
+        self.winfo_toplevel().bind("<Button-1>", self._on_outside_click, add="+")  # click elsewhere closes it
+        if initial:
+            self.set(initial)
+
+    # value
+
+    def get(self):
+        return self.value.isoformat() if self.value else ""
+
+    def clear(self):
+        """Forget the picked date and show the placeholder again."""
+        self.value = None
+        self.text.configure(text=self.placeholder, text_color=colors.TEXT_GRAY)
+
+    def set(self, value):
+        """Accepts a date or a 'YYYY-MM-DD' string; anything unreadable is ignored."""
+        if isinstance(value, datetime):
+            value = value.date()
+        elif isinstance(value, str):
+            try:
+                value = datetime.strptime(value.strip(), "%Y-%m-%d").date()
+            except ValueError:
+                return
+        if not isinstance(value, date):
+            return
+        self.value = value
+        self.text.configure(text=value.strftime("%b %d, %Y"), text_color=colors.TEXT_DARK)
+
+    # popup calendar
+
+    def toggle(self):
+        self.close() if self.popup else self.open()
+
+    def open(self):
+        start = self.value or max(date.today(), self.min_date or date.today())
+        self.view_year, self.view_month = start.year, start.month
+        self.popup = tk.Toplevel(self)
+        self.popup.overrideredirect(True)
+        try:
+            self.popup.attributes("-topmost", True)  # stay above the dialog
+        except tk.TclError:
+            pass
+        self.popup.configure(bg=colors.CARD_WHITE, highlightthickness=1, highlightbackground=colors.BORDER_GRAY)
+        self.popup.bind("<Escape>", lambda _e: self.close())
+        self._render()
+
+    def close(self):
+        if self.popup:
+            self.popup.destroy()
+            self.popup = None
+
+    def _on_outside_click(self, event):
+        if self.popup and not str(event.widget).startswith(str(self)):
+            self.close()
+
+    def _shift(self, months):
+        index = self.view_year * 12 + self.view_month - 1 + months
+        self.view_year, self.view_month = index // 12, index % 12 + 1
+        self._render()
+
+    def _pick(self, chosen):
+        self.set(chosen)
+        self.close()
+
+    def _render(self):
+        pop, year, month = self.popup, self.view_year, self.view_month
+        for w in pop.winfo_children():
+            w.destroy()
+        box = ctk.CTkFrame(pop, fg_color=colors.CARD_WHITE, corner_radius=0)
+        box.pack(padx=10, pady=10)
+
+        can_prev = not self.min_date or (year, month) > (self.min_date.year, self.min_date.month)
+        nav = dict(width=30, height=28, corner_radius=4, fg_color=colors.ENTRY_BG, hover_color=colors.BORDER_GRAY,
+                   text_color=colors.TEXT_DARK, text_color_disabled=self.DISABLED_TEXT)
+        head = ctk.CTkFrame(box, fg_color="transparent")
+        head.pack(fill="x")
+        ctk.CTkButton(head, text="\u2039", command=lambda: self._shift(-1),
+                      state="normal" if can_prev else "disabled", **nav).pack(side="left")
+        ctk.CTkButton(head, text="\u203a", command=lambda: self._shift(1), **nav).pack(side="right")
+        label(head, f"{calendar.month_name[month]} {year}", 13, True).pack(expand=True)
+
+        grid = ctk.CTkFrame(box, fg_color="transparent")
+        grid.pack(pady=(8, 0))
+        for c, name in enumerate(("Su", "Mo", "Tu", "We", "Th", "Fr", "Sa")):
+            label(grid, name, 11, True, colors.TEXT_GRAY, width=36).grid(row=0, column=c, pady=(0, 2))
+        today = date.today()
+        for r, week in enumerate(calendar.Calendar(firstweekday=6).monthdayscalendar(year, month), 1):
+            for c, day in enumerate(week):
+                if not day:
+                    continue
+                d = date(year, month, day)
+                off, picked = bool(self.min_date and d < self.min_date), d == self.value
+                ctk.CTkButton(grid, text=str(day), width=36, height=30, corner_radius=4,
+                              fg_color=colors.BUTTON_BLUE if picked else "transparent",
+                              hover_color=colors.BUTTON_BLUE_HOVER if picked else SELECT_BG,
+                              text_color="white" if picked else colors.TEXT_DARK,
+                              text_color_disabled=self.DISABLED_TEXT, state="disabled" if off else "normal",
+                              border_width=1 if d == today and not picked else 0, border_color=colors.ACCENT_RED,
+                              command=lambda d=d: self._pick(d)).grid(row=r, column=c, padx=1, pady=1)
+        self._position()
+
+    def _position(self):
+        """Put the calendar just under the field, or above it when there is no room below."""
+        pop = self.popup
+        pop.update_idletasks()
+        x, y = self.winfo_rootx(), self.winfo_rooty() + self.winfo_height() + 2
+        if y + pop.winfo_reqheight() > pop.winfo_screenheight() - 40:
+            y = self.winfo_rooty() - pop.winfo_reqheight() - 2
+        pop.geometry(f"+{x}+{max(y, 0)}")
+        pop.lift()
 
 
 class FormDialog(ctk.CTkToplevel):
@@ -396,13 +540,15 @@ class VerifyMixin:
             try:
                 email_service.send_and_store_code(email)
                 self._status(f"Code sent to {email}. Check your inbox.")
-            except Exception as exc:
-                self._status(f"Failed to send email: {exc}", colors.ACCENT_RED)
+            except email_service.CodeRequestError as exc:
+                self._status(str(exc), colors.ACCENT_RED)
+            except Exception:  # don't show mail-server details to the user
+                self._status("Could not send the email. Please try again later.", colors.ACCENT_RED)
 
         threading.Thread(target=worker, daemon=True).start()
 
     def _on_code_changed(self, *_):
-        """Auto-verify the moment a 6-digit code has been typed or pasted in."""
+        """Auto verify the moment a 6-digit code has been typed or pasted in."""
         code = self.code_var.get().strip()
         if len(code) == 6 and code.isdigit() and code != self._last_auto_checked_code:
             self._last_auto_checked_code = code
@@ -417,7 +563,7 @@ class VerifyMixin:
         self._status(message, colors.SUCCESS_GREEN if ok else colors.ACCENT_RED)
 
     def done(self, message, next_step):
-        """Show a success message, then run next_step (e.g. open the login screen) after 1.5 s."""
+        """Show a success message, then run next_step (for example: open the login screen) after 1.5 s."""
         self.error_label.configure(text="")
         self._status(message, colors.SUCCESS_GREEN)
         self.after(1500, next_step)

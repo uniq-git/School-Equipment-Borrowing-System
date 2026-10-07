@@ -6,8 +6,7 @@ import customtkinter as ctk
 
 from ui import colors
 from ui.helpers import AuthWindow, Fields, VerifyMixin, label, link
-from ui.left_panel import build_left_panel
-import auth
+from services import auth
 
 
 class ForgotPasswordWindow(VerifyMixin, AuthWindow):

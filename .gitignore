@@ -1,0 +1,12 @@
+# Secrets files 
+.env
+
+# Python
+__pycache__/
+*.pyc
+
+# User uploads
+assets/equipment_photos/
+
+# Developer use only
+dev_login.py

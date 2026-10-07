@@ -7,9 +7,7 @@ import customtkinter as ctk
 
 from ui import colors
 from ui.helpers import AuthWindow, Fields, VerifyMixin, label, link
-from ui.left_panel import build_left_panel
-import auth
-import email_service
+from services import auth, email_service
 
 
 class RegisterWindow(VerifyMixin, AuthWindow):

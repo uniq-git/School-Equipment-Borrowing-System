@@ -63,6 +63,8 @@ def init_database():
             role ENUM('Admin', 'Student', 'Teacher', 'Staff') NOT NULL DEFAULT 'Student',
             email_verified TINYINT(1) NOT NULL DEFAULT 0,
             status ENUM('active', 'inactive') NOT NULL DEFAULT 'active',
+            failed_logins INT NOT NULL DEFAULT 0,
+            locked_until DATETIME NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
@@ -74,6 +76,7 @@ def init_database():
             email VARCHAR(150) NOT NULL,
             code VARCHAR(6) NOT NULL,
             is_verified TINYINT(1) NOT NULL DEFAULT 0,
+            attempts INT NOT NULL DEFAULT 0,
             expires_at DATETIME NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
@@ -97,6 +100,8 @@ def init_database():
             quantity INT NOT NULL DEFAULT 1,
             condition_status ENUM('New', 'Good', 'Fair', 'Needs Repair') NOT NULL DEFAULT 'Good',
             photo_path VARCHAR(255),
+            under_repair INT NOT NULL DEFAULT 0,
+            is_deleted TINYINT(1) NOT NULL DEFAULT 0,
             added_by INT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (added_by) REFERENCES users(id) ON DELETE SET NULL
@@ -115,7 +120,7 @@ def init_database():
             user_id INT NOT NULL,
             equipment_id INT NOT NULL,
             quantity INT NOT NULL DEFAULT 1,
-            status ENUM('Pending', 'Approved', 'Denied', 'Returned') NOT NULL DEFAULT 'Pending',
+            status ENUM('Pending', 'Approved', 'Denied', 'Returned', 'Cancelled') NOT NULL DEFAULT 'Pending',
             request_date DATETIME DEFAULT CURRENT_TIMESTAMP,
             due_date DATE,
             approved_by INT,
@@ -123,8 +128,11 @@ def init_database():
             returned_at DATETIME NULL,
             returned_by INT NULL,
             returned_quantity INT NULL,
-            return_condition ENUM('New', 'Good', 'Fair', 'Needs Repair') NULL,
+            return_condition ENUM('New', 'Good', 'Fair', 'Needs Repair', 'Damaged', 'Lost') NULL,
             return_notes VARCHAR(255) NULL,
+            overdue_reminder_sent_at DATETIME NULL,
+            purpose VARCHAR(255) NULL,
+            deny_reason VARCHAR(255) NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
             FOREIGN KEY (equipment_id) REFERENCES equipment(id) ON DELETE CASCADE,
@@ -140,25 +148,14 @@ def init_database():
             (name,)
         )
 
-    # Add the default admin account.
-    cursor.execute(
-        "INSERT IGNORE INTO users "
-        "(full_name, student_number, email, password, role, email_verified, status) "
-        "VALUES (%s, %s, %s, %s, %s, 1, 'active')",
-        (
-            "System Administrator",
-            "AD000000001",
-            "admin@icct.edu.ph",
-            "$2b$12$0/gqGsKbQMjHC7YA/40t5eQCHJar3QM/CWs6Lwa60lYGd9tS/Lqpy",
-            "Admin",
-        ),
-    )
+    # No default admin account is created here (a built-in password would be public).
+    # Run "python set_admin_password.py" once to create or reset the admin.
 
     conn.commit()
     cursor.close()
     conn.close()
 
-    # Make sure an older database also gets the return columns.
+    # Make sure an older database also gets the newer columns.
     upgrade_database()
 
 
@@ -167,19 +164,52 @@ RETURN_COLUMNS = [
     ("returned_at", "DATETIME NULL"),
     ("returned_by", "INT NULL"),
     ("returned_quantity", "INT NULL"),
-    ("return_condition", "ENUM('New', 'Good', 'Fair', 'Needs Repair') NULL"),
+    ("return_condition", "ENUM('New', 'Good', 'Fair', 'Needs Repair', 'Damaged', 'Lost') NULL"),
     ("return_notes", "VARCHAR(255) NULL"),
+    # When the last overdue reminder email was sent (it is repeated every few days).
+    ("overdue_reminder_sent_at", "DATETIME NULL"),
+    # Why the equipment is needed, and why a request was denied.
+    ("purpose", "VARCHAR(255) NULL"),
+    ("deny_reason", "VARCHAR(255) NULL"),
 ]
 
 
 def upgrade_database():
     """
-    Upgrade an existing borrow_requests table so it supports returns.
+    Upgrade an existing database:
+      - email_verifications: add the wrong-attempts counter.
+      - borrow_requests: add what is needed to support returns.
     Safe to run many times: it only changes what is still missing and
-    it never deletes or rewrites existing borrowing records.
+    it never deletes or rewrites existing users or borrowing records.
     """
     conn = get_connection()
     cursor = conn.cursor()
+
+    def add_missing_columns(table, columns):
+        cursor.execute(
+            "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS "
+            "WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s",
+            (config.DB_NAME, table),
+        )
+        found = [row[0] for row in cursor.fetchall()]
+        for name, definition in columns:
+            if found and name not in found:  # (existing rows get the default / NULL)
+                cursor.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
+        conn.commit()
+
+    add_missing_columns("users", [
+        ("failed_logins", "INT NOT NULL DEFAULT 0"),
+        ("locked_until", "DATETIME NULL"),
+        # 1 = account made by an admin with a temporary password; cleared when the user changes it.
+        ("must_change_password", "TINYINT(1) NOT NULL DEFAULT 0"),
+    ])
+    add_missing_columns("email_verifications", [("attempts", "INT NOT NULL DEFAULT 0")])
+    # under_repair: units out of service after a damaged return.
+    # is_deleted: equipment is hidden instead of erased so borrowing history is kept.
+    add_missing_columns("equipment", [
+        ("under_repair", "INT NOT NULL DEFAULT 0"),
+        ("is_deleted", "TINYINT(1) NOT NULL DEFAULT 0"),
+    ])
 
     cursor.execute(
         "SELECT COLUMN_NAME, COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS "
@@ -198,11 +228,11 @@ def upgrade_database():
         conn.close()
         return
 
-    # 1. Allow the new 'Returned' status.
-    if "Returned" not in existing.get("status", ""):
+    # 1. Allow the 'Returned' and 'Cancelled' statuses.
+    if "Returned" not in existing.get("status", "") or "Cancelled" not in existing.get("status", ""):
         cursor.execute(
             "ALTER TABLE borrow_requests MODIFY status "
-            "ENUM('Pending', 'Approved', 'Denied', 'Returned') "
+            "ENUM('Pending', 'Approved', 'Denied', 'Returned', 'Cancelled') "
             "NOT NULL DEFAULT 'Pending'"
         )
 
@@ -216,6 +246,13 @@ def upgrade_database():
                     "ALTER TABLE borrow_requests ADD FOREIGN KEY (returned_by) "
                     "REFERENCES users(id) ON DELETE SET NULL"
                 )
+
+    # 3. Allow the Damaged / Lost return conditions (older records keep their value).
+    if "Damaged" not in existing.get("return_condition", ""):
+        cursor.execute(
+            "ALTER TABLE borrow_requests MODIFY return_condition "
+            "ENUM('New', 'Good', 'Fair', 'Needs Repair', 'Damaged', 'Lost') NULL"
+        )
 
     conn.commit()
     cursor.close()

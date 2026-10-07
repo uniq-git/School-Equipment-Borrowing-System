@@ -5,7 +5,7 @@ import customtkinter as ctk
 
 from ui import colors
 from ui.helpers import AuthWindow, Fields, label, link
-import auth
+from services import auth
 
 class LoginWindow(AuthWindow):
     def __init__(self):

@@ -2,21 +2,21 @@
 Admin-only dialog for creating Teacher, Staff, or Admin accounts directly.
 Students self-register through the normal Register screen instead.
 
-The role prefix (CA/FA/SF/AD) is applied automatically based on the
+The role prefix (CA/TC/SF/AD) is applied automatically based on the
 selected role, so it's impossible to create a mismatched ID number.
 """
 import customtkinter as ctk
 
 from ui import colors
 from ui.helpers import FormDialog, entry, label
-import auth
+from services import auth
 
 ROLE_OPTIONS = ["Teacher", "Staff", "Admin", "Student"]
 
 
 class AddUserDialog(FormDialog):
     def __init__(self, parent):
-        super().__init__(parent, "Add User", "380x740")
+        super().__init__(parent, "Add User", "380x680")
         f = self.f
  
         self.full_name_entry = f.entry("Full Name", "Enter your full name")
@@ -48,4 +48,3 @@ class AddUserDialog(FormDialog):
             self.full_name_entry.get(), self.role_var.get(), self.digits_entry.get(),
             self.email_entry.get(), password)
         self.result(ok, message, getattr(self.parent, "load_users", None), 1500)
- 
