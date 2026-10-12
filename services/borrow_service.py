@@ -6,6 +6,7 @@ from database import get_connection
 STATUS_OPTIONS = ["Pending", "Approved", "Denied", "Returned", "Cancelled"]
 REMINDER_REPEAT_DAYS = 3  # an overdue borrower is reminded again after this many days
 DATE_FORMAT = "%Y-%m-%d"
+MAX_UNITS_PER_USER = 2  # most units one user may hold (pending + approved, not yet returned) at a time
 RETURN_ROLES = ("Admin", "Staff")
 CONDITION_OPTIONS = ["New", "Good", "Fair", "Needs Repair"]
 RETURN_CONDITIONS = ["Good", "Damaged", "Lost"]  # what the borrower brings back
@@ -42,6 +43,21 @@ def get_available_quantity(equipment_id, exclude_request_id=None):
     return max(0, equipment["quantity"] - int(equipment["under_repair"] or 0) - int(borrowed))
 
 
+def get_units_held(user_id):
+    """Units this user has requested or borrowed and not yet returned (Pending + Approved)."""
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute(
+        "SELECT COALESCE(SUM(quantity), 0) AS held FROM borrow_requests "
+        "WHERE user_id = %s AND status IN ('Pending', 'Approved')",
+        (user_id,)
+    )
+    held = int(cursor.fetchone()["held"])
+    cursor.close()
+    conn.close()
+    return held
+
+
 def create_request(user_id, equipment_id, quantity, due_date_str, purpose=None):
     try:
         quantity = int(quantity)
@@ -76,6 +92,17 @@ def create_request(user_id, equipment_id, quantity, due_date_str, purpose=None):
 
     if not equipment or equipment.get("is_deleted"):
         return False, "This equipment no longer exists."
+
+    held = get_units_held(user_id)
+    allowed = MAX_UNITS_PER_USER - held
+
+    if quantity > allowed:
+        if allowed <= 0:
+            return False, (f"You can only borrow up to {MAX_UNITS_PER_USER} items at a time and already have "
+                           f"{held} not yet returned. Admin / Staff must confirm that an item was "
+                           f"returned before you can borrow again.")
+        return False, (f"You can only borrow up to {MAX_UNITS_PER_USER} items at a time. "
+                       f"You have {held} not yet returned, so you can borrow {allowed} more.")
 
     available = get_available_quantity(equipment_id)
 
@@ -550,10 +577,10 @@ def _load_return(request_id, processed_by_user_id):
     if not request:
         return "Transaction not found.", None, None
 
-    # Borrower / Admin selects an active transaction to return:
-    # Admin and Staff can return any borrowing, a borrower only their own.
-    if processor["role"] not in RETURN_ROLES and request["user_id"] != processed_by_user_id:
-        return "You can only return equipment that you borrowed.", None, None
+    # Only Admin / Staff can confirm a return (they check the item physically).
+    # A borrower uses request_return() to tell them it is on its way back.
+    if processor["role"] not in RETURN_ROLES:
+        return "Only Admin or Staff can confirm that equipment was returned.", None, None
 
     if request["status"] == "Returned":
         return "This equipment has already been returned.", None, None
@@ -562,6 +589,41 @@ def _load_return(request_id, processed_by_user_id):
         return "Only active borrowings can be returned.", None, None
 
     return None, request, processor
+
+
+def request_return(request_id, user_id):
+    """
+    Borrower says "I returned this item" in the app. Nothing is returned yet: the borrowing stays
+    active and still counts toward the borrow limit until Admin / Staff confirm they physically
+    received it (process_split_return).
+    """
+    request = get_request_by_id(request_id)
+
+    if not request or request["user_id"] != user_id:
+        return False, "You can only return equipment that you borrowed."
+
+    if request["status"] == "Returned":
+        return False, "This equipment has already been returned."
+
+    if request["status"] != "Approved":
+        return False, "Only active borrowings can be returned."
+
+    if request.get("return_requested_at"):
+        return False, "You already sent this return. Please wait for Admin / Staff to confirm it."
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE borrow_requests SET return_requested_at = NOW() "
+        "WHERE id = %s AND status = 'Approved' AND return_requested_at IS NULL",
+        (request_id,)
+    )
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+    return True, ("Return sent. Please hand the item to Admin / Staff. It counts as returned, and you can "
+                  "borrow again, only after they confirm they received it.")
 
 
 def _return_units(cursor, request, processed_by_user_id, condition, notes, quantity, remaining):
@@ -574,7 +636,7 @@ def _return_units(cursor, request, processed_by_user_id, condition, notes, quant
     if quantity < remaining:
         # Keep the rest as an active borrowing; the returned part becomes its own Returned record.
         cursor.execute(
-            "UPDATE borrow_requests SET quantity = quantity - %s "
+            "UPDATE borrow_requests SET quantity = quantity - %s, return_requested_at = NULL "
             "WHERE id = %s AND status = 'Approved' AND quantity = %s",
             (quantity, request["id"], remaining)
         )

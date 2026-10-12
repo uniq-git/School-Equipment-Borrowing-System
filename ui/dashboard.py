@@ -14,19 +14,21 @@ from ui.left_panel import ASSETS_DIR
 
 PAGES = {"catalog": "Equipment Catalog", "requests": "My Requests", "history": "Borrowing History"}
 SUBTITLES = {"catalog": "Pick equipment and send a borrow request.",
-             "requests": "Your requests. Select an active one to return it.",
+             "requests": "Your requests. Select an active one to return it; Admin / Staff must confirm the return.",
              "history": "Equipment you have already returned."}
 STATUS_TINTS = {"Pending": "#fdf3df", "Active": "#e3f4ea", "Overdue": "#fbe4ea", "Returned": "#e4eaf6",
-                "Denied": "#eceef2"}
+                "Denied": "#eceef2", "Return Pending": "#fdf3df"}
 CHIP_STATUSES = ("Pending", "Active", "Overdue", "Returned", "Denied")  # the counters shown in the banner
 CATALOG_COLS = 3
 STATUS_COLORS = {"Pending": AMBER, "Active": colors.SUCCESS_GREEN, "Overdue": colors.ACCENT_RED,
                  "Returned": colors.BUTTON_BLUE, "Denied": colors.TEXT_GRAY,
-                 "Cancelled": colors.TEXT_GRAY}
+                 "Cancelled": colors.TEXT_GRAY, "Return Pending": AMBER}
 
 
 def display_status(row):
     """Status shown to the borrower. An approved borrowing is Active, or Overdue once it is past its due date."""
+    if row["status"] == "Approved" and row.get("return_requested_at"):
+        return "Return Pending"  # the borrower sent the return; waiting for Admin / Staff to confirm
     if row["status"] == "Approved":
         return "Overdue" if row["state"] == "Overdue" else "Active"
     return row["status"]
@@ -262,7 +264,7 @@ class DashboardWindow(ctk.CTk):
         self.load_catalog()
 
     def return_selected(self):
-        """The borrower selects one of their active borrowings and returns it."""
+        """The borrower tells Admin / Staff they returned an item. It stays active until they confirm."""
         tid = selected_id(self.req_tree, "an active borrowing")
         if not tid:
             return
@@ -271,9 +273,16 @@ class DashboardWindow(ctk.CTk):
             messagebox.showinfo("Not Available", "Only your active borrowings can be returned.")
             self.load_my_requests()
             return
-        from ui.borrow import ReturnDialog
-        ReturnDialog(self, self.user, txn, on_success=lambda: (
-            self.load_my_requests(), self.load_catalog(), self.load_history()))
+        if not messagebox.askyesno(
+                "Return Equipment",
+                f"Send the return of '{txn['equipment_name']}' x{txn['quantity']}?\n\n"
+                "Hand the item to Admin / Staff. It only counts as returned (and frees up your "
+                "borrow limit) once they confirm they received it."):
+            return
+        ok, msg = borrow_service.request_return(int(tid), self.user["id"])
+        (messagebox.showinfo if ok else messagebox.showerror)("Return Equipment" if ok else "Not Allowed", msg)
+        self.load_my_requests()
+        self.load_catalog()
 
     # ---------- Borrowing History ----------
 

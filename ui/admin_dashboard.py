@@ -37,7 +37,7 @@ OVERDUE_COLS = [("ID", 36), ("Borrower", 140), ("Role", 70), ("Equipment", 150),
                 ("Due Date", 95), ("Days Overdue", 100), ("Status", 70), ("Reminder", 75)]
 OVERDUE_CHECK_MS = 30 * 60 * 1000  # the scheduled overdue check runs every 30 minutes
 RETURN_COLS = [("Transaction ID", 105), ("Borrower", 150), ("Equipment", 165), ("Quantity", 70),
-               ("Borrow Date", 100), ("Due Date", 100), ("Status", 80)]
+               ("Borrow Date", 100), ("Due Date", 100), ("Status", 140)]
 
 
 def table(parent, cols, tags=None):
@@ -373,7 +373,7 @@ class AdminDashboard(ctk.CTk):
 
     def _build_returns(self, parent):
         page, bar, self.returns_tree = table(parent, RETURN_COLS, tags={"overdue": colors.ACCENT_RED})
-        tool_row(bar, left=[("Return", self.return_transaction, "green")],
+        tool_row(bar, left=[("Confirm Return", self.return_transaction, "green", 140)],
                  right=[("Refresh", self.load_returns)])
         self.load_returns()
         return page
@@ -383,7 +383,8 @@ class AdminDashboard(ctk.CTk):
         rows = borrow_service.get_active_transactions()
         fill_table(self.returns_tree, rows,
                    lambda r: (r["borrower_name"], r["equipment_name"], r["quantity"],
-                              fmt_date(r["approved_at"] or r["request_date"]), fmt_date(r["due_date"]), r["state"]),
+                              fmt_date(r["approved_at"] or r["request_date"]), fmt_date(r["due_date"]),
+                              "Return Requested" if r.get("return_requested_at") else r["state"]),
                    lambda r: ("overdue",) if r["state"] == "Overdue" else (), show_id=True)
 
     def return_transaction(self):

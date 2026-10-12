@@ -1,7 +1,11 @@
 import os
+import sys
 from dotenv import load_dotenv
 
-load_dotenv()
+# Folder that holds .env: next to the .exe when packaged, otherwise the project folder.
+APP_DIR = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.path.dirname(os.path.abspath(__file__))
+
+load_dotenv(os.path.join(APP_DIR, ".env"))
 
 
 # Database settings

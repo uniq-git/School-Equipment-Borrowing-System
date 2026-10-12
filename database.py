@@ -31,23 +31,25 @@ def init_database():
     This runs when the app starts.
     """
 
-    # Create the database first.
-    server_conn = mysql.connector.connect(
-        host=config.DB_HOST,
-        port=config.DB_PORT,
-        user=config.DB_USER,
-        password=config.DB_PASSWORD,
-    )
+    try:
+        server_conn = mysql.connector.connect(
+            host=config.DB_HOST,
+            port=config.DB_PORT,
+            user=config.DB_USER,
+            password=config.DB_PASSWORD,
+        )
 
-    server_cursor = server_conn.cursor()
+        server_cursor = server_conn.cursor()
 
-    server_cursor.execute(
-        f"CREATE DATABASE IF NOT EXISTS {config.DB_NAME} "
-        "CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
-    )
+        server_cursor.execute(
+            f"CREATE DATABASE IF NOT EXISTS {config.DB_NAME} "
+            "CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+        )
 
-    server_cursor.close()
-    server_conn.close()
+        server_cursor.close()
+        server_conn.close()
+    except mysql.connector.Error as exc:
+        print(f"Skipped creating the database (using the existing one): {exc}")
 
     # Create the tables.
     conn = get_connection()
@@ -171,6 +173,9 @@ RETURN_COLUMNS = [
     # Why the equipment is needed, and why a request was denied.
     ("purpose", "VARCHAR(255) NULL"),
     ("deny_reason", "VARCHAR(255) NULL"),
+    # When the borrower said "I returned it" in the app. The borrowing stays active (and still counts
+    # toward the borrow limit) until Admin / Staff confirm they received the item.
+    ("return_requested_at", "DATETIME NULL"),
 ]
 
 

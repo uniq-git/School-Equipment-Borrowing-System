@@ -1,11 +1,15 @@
 import os
 import shutil
+import sys
 import uuid
 from database import get_connection
 
 CONDITION_OPTIONS = ["New", "Good", "Fair", "Needs Repair"]
 
-ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if getattr(sys, "frozen", False):  # packaged .exe: keep uploaded photos next to the .exe so they survive updates
+    ROOT_DIR = os.path.dirname(sys.executable)
+else:
+    ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PHOTOS_DIR = os.path.join(ROOT_DIR, "assets", "equipment_photos")
 # Older versions saved photos inside services/assets; they are still found there.
 LEGACY_PHOTOS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "equipment_photos")
