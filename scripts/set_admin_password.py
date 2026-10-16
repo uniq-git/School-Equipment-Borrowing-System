@@ -1,14 +1,14 @@
 """
-Create the first Admin account, or reset an Admin's password.
+Make the first Admin account, or reset the Admin's password.
     python scripts/set_admin_password.py
 
-The Admin's ID Number is AD + 9 digits (e.g. AD000000001).
+Admin ID Number is AD + 9 digits (like AD000000001).
 """
 import getpass
 import os
 import sys
 
-# Make the project root (database, config, services) importable from scripts/.
+# make the project root (database, config, services) importable from scripts/
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 

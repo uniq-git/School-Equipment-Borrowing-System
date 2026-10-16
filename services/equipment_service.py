@@ -6,12 +6,12 @@ from database import get_connection
 
 CONDITION_OPTIONS = ["New", "Good", "Fair", "Needs Repair"]
 
-if getattr(sys, "frozen", False):  # packaged .exe: keep uploaded photos next to the .exe so they survive updates
+if getattr(sys, "frozen", False):  # packaged .exe: keep the uploaded photos beside the .exe so they stay after updates
     ROOT_DIR = os.path.dirname(sys.executable)
 else:
     ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PHOTOS_DIR = os.path.join(ROOT_DIR, "assets", "equipment_photos")
-# Older versions saved photos inside services/assets; they are still found there.
+# old versions saved photos inside services/assets, they are still found there
 LEGACY_PHOTOS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "equipment_photos")
 
 
@@ -131,7 +131,7 @@ def get_photo_full_path(photo_filename):
 def add_equipment(name,category,quantity,condition,photo_source_path,added_by_user_id):
     """
     Add new equipment.
-    Check the details first before saving it.
+    Check the details first before saving.
     """
     name = name.strip()
     category = category.strip()
@@ -177,9 +177,9 @@ def add_equipment(name,category,quantity,condition,photo_source_path,added_by_us
 
 def update_equipment(equipment_id, name, category, quantity, condition, photo_source_path=None, under_repair=None):
     """
-    Edit an existing equipment item.
-    Same checks as adding. A new photo is only saved if one was chosen;
-    otherwise the current photo is kept.
+    Edit an existing equipment.
+    Same checks as add. A new photo is saved only if one is chosen,
+    if not the current photo stays.
     """
     name = name.strip()
     category = category.strip()
@@ -201,7 +201,7 @@ def update_equipment(equipment_id, name, category, quantity, condition, photo_so
     if condition not in CONDITION_OPTIONS:
         return False, "Please select a valid condition."
 
-    # Units under repair (optional): None keeps the current value.
+    # units under repair (optional). None keeps the current value
     if under_repair is not None and str(under_repair).strip() != "":
         try:
             under_repair = int(under_repair)
@@ -238,7 +238,7 @@ def update_equipment(equipment_id, name, category, quantity, condition, photo_so
         conn.close()
         return False, "Please select a valid category."
 
-    # Units that are out on an approved borrowing must stay inside the total quantity.
+    # units that are out on an approved borrowing must stay inside the total quantity
     cursor.execute(
         "SELECT COALESCE(SUM(quantity), 0) AS borrowed FROM borrow_requests "
         "WHERE equipment_id = %s AND status = 'Approved'",
@@ -280,7 +280,7 @@ def update_equipment(equipment_id, name, category, quantity, condition, photo_so
     cursor.close()
     conn.close()
 
-    # Remove the replaced photo file (if any) once the update is saved.
+    # delete the old photo file (if any) after the update is saved
     if old_photo:
         old_path = get_photo_full_path(old_photo)
         if old_path:
@@ -293,7 +293,7 @@ def update_equipment(equipment_id, name, category, quantity, condition, photo_so
 
 
 def get_all_equipment(include_deleted=False):
-    """Get the equipment list. Removed items are left out unless include_deleted is True."""
+    """Get the equipment list. Removed items are not included unless include_deleted is True."""
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
 
@@ -335,10 +335,10 @@ def is_currently_borrowed(equipment_id):
 
 def delete_equipment(equipment_id):
     """
-    Remove an equipment item.
-    Not allowed while the equipment is currently borrowed.
-    An item with borrowing records is only hidden (is_deleted) so its history
-    and reports are kept; an item that was never borrowed is erased.
+    Remove an equipment.
+    Not allowed while the equipment is borrowed.
+    If it has borrowing records it is only hidden (is_deleted) so the history
+    and reports stay. If it was never borrowed it is deleted.
     """
     if is_currently_borrowed(equipment_id):
         return False, "Cannot Delete \u2014 Currently Borrowed"
@@ -354,7 +354,7 @@ def delete_equipment(equipment_id):
     has_history = cursor.fetchone()[0] > 0
 
     if has_history:
-        # Waiting requests can no longer be fulfilled.
+        # waiting requests can't be fulfilled anymore
         cursor.execute(
             "UPDATE borrow_requests SET status = 'Denied' "
             "WHERE equipment_id = %s AND status = 'Pending'",

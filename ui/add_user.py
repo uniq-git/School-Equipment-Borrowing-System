@@ -1,9 +1,9 @@
 """
-Admin-only dialog for creating Teacher, Staff, or Admin accounts directly.
-Students self-register through the normal Register screen instead.
+Popup for admin only. Makes Teacher, Staff or Admin accounts.
+Students register by themselves in the Register screen.
 
-The role prefix (CA/TC/SF/AD) is applied automatically based on the
-selected role, so it's impossible to create a mismatched ID number.
+The ID prefix (CA/TC/SF/AD) is added automatically from the role,
+so the ID number can't be wrong.
 """
 import customtkinter as ctk
 

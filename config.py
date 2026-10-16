@@ -2,7 +2,7 @@ import os
 import sys
 from dotenv import load_dotenv
 
-# Folder that holds .env: next to the .exe when packaged, otherwise the project folder.
+# folder of the .env file. beside the .exe if packaged, if not the project folder
 APP_DIR = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.path.dirname(os.path.abspath(__file__))
 
 load_dotenv(os.path.join(APP_DIR, ".env"))
@@ -16,7 +16,7 @@ DB_PASSWORD = os.getenv("DB_PASSWORD", "")
 DB_NAME = os.getenv("DB_NAME", "school_equipment_db")
 
 
-# Email settings (no defaults: the real values must come from your .env file)
+# Email settings (no default, put the real values in your .env file)
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USER = os.getenv("SMTP_USER", "")

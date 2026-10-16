@@ -1,4 +1,4 @@
-"""Change Password pop-up: verify your email with a 6-digit code, then set a new password."""
+"""Change Password popup. Verify email with a 6-digit code, then set the new password."""
 from ui import colors
 from ui.helpers import FormDialog, VerifyMixin
 from services import auth
@@ -10,7 +10,7 @@ class ChangePasswordDialog(VerifyMixin, FormDialog):
         self.user = user
         f = self.f
 
-        # The logged-in user's own email: shown in a locked box, not typed in.
+        # user's own email, shown in a locked box (not typed)
         self.email_entry = f.entry("Email Address", "")
         self.email_entry.insert(0, user["email"])
         self.email_entry.configure(state="disabled", text_color=colors.TEXT_GRAY)
@@ -19,7 +19,7 @@ class ChangePasswordDialog(VerifyMixin, FormDialog):
         self.new_password_entry = f.password("New Password", "Create a new password")
         self.confirm_password_entry = f.password("Confirm New Password", "Re-enter new password")
         self.footer("Change Password", self.handle_submit)
-        self.error_label = self.status  # VerifyMixin shows its messages in the same status line
+        self.error_label = self.status  # VerifyMixin shows its messages on the same status line
 
     def handle_submit(self):
         current, new = self.current_password_entry.get(), self.new_password_entry.get()
@@ -29,4 +29,4 @@ class ChangePasswordDialog(VerifyMixin, FormDialog):
             return self.show("Passwords do not match.")
 
         ok, message = auth.change_password_verified(self.user["id"], current, new)
-        self.result(ok, message)  # on success: shows the message, disables the button, closes the window
+        self.result(ok, message)  # if success: shows the message, disables the button and closes the window

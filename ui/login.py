@@ -1,6 +1,4 @@
-"""
-Login screen: Student Number + Password, matching the attached design.
-"""
+"""Login screen: Student Number and Password, same as the design."""
 import customtkinter as ctk
 
 from ui import colors

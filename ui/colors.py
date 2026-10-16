@@ -1,6 +1,4 @@
-"""
-Shared colors so every screen looks consistent with the ICCT design reference.
-"""
+"""Shared colors so all the screens look the same (ICCT design)."""
 
 NAVY_DARK = "#132038"       # left panel background
 ACCENT_RED = "#e0355b"      # underline / accent bar

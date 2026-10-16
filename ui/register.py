@@ -1,5 +1,5 @@
 """
-Registration screen: Full Name, Student Number, Email, Password, Confirm Password,
+Register screen: Full Name, Student Number, Email, Password, Confirm Password,
 Send Verification Code / Verification Code / Verify Email, then Register.
 """
 import threading

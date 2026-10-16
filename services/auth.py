@@ -321,7 +321,7 @@ def login_user(id_number, password):
         return False, WRONG_LOGIN, None
 
     if user["password"] == LEAKED_DEFAULT_HASH:
-        return False, "This account still uses the old default password. Run set_admin_password.py to set a new one.", None
+        return False, "This account still uses the old default password. Run scripts/set_admin_password.py to set a new one.", None
 
     if not user["email_verified"]:
         return False, "Please verify your email before logging in.", None

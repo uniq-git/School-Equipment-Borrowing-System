@@ -51,7 +51,7 @@ def init_database():
     except mysql.connector.Error as exc:
         print(f"Skipped creating the database (using the existing one): {exc}")
 
-    # Create the tables.
+    # create the tables
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -71,7 +71,7 @@ def init_database():
         )
     """)
 
-    # Table for email verification codes.
+    # table for the email verification codes
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS email_verifications (
             id INT AUTO_INCREMENT PRIMARY KEY,
@@ -84,7 +84,7 @@ def init_database():
         )
     """)
 
-    # Store the equipment categories here.
+    # categories of the equipment
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS equipment_categories (
             id INT AUTO_INCREMENT PRIMARY KEY,
@@ -93,7 +93,7 @@ def init_database():
         )
     """)
 
-    # Store all the equipment here.
+    # all the equipment
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS equipment (
             id INT AUTO_INCREMENT PRIMARY KEY,
@@ -110,12 +110,12 @@ def init_database():
         )
     """)
 
-    # Store borrowing requests here. A single row represents the request,
-    # and once it is Approved it also serves as the active borrowing
-    # transaction (borrower, equipment, dates, who approved it, status).
-    # When the equipment comes back the same row becomes 'Returned' and the
-    # return details (date, who processed it, quantity, condition, notes)
-    # are saved in the returned_* / return_* columns. The row is never deleted.
+    # borrowing requests. 1 row is 1 request,
+    # and when approved it is also the active borrowing
+    # (borrower, equipment, dates, who approved, status).
+    # when the equipment comes back the same row becomes 'Returned'
+    # and the return details (date, who processed, quantity, condition, notes)
+    # are saved in the returned_* / return_* columns. the row is never deleted.
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS borrow_requests (
             id INT AUTO_INCREMENT PRIMARY KEY,
@@ -143,49 +143,49 @@ def init_database():
         )
     """)
 
-    # Add the default categories if they are not there yet.
+    # add the default categories if they are not there yet
     for name in DEFAULT_CATEGORIES:
         cursor.execute(
             "INSERT IGNORE INTO equipment_categories (name) VALUES (%s)",
             (name,)
         )
 
-    # No default admin account is created here (a built-in password would be public).
-    # Run "python set_admin_password.py" once to create or reset the admin.
+    # no default admin account here (a built-in password would be public)
+    # run "python scripts/set_admin_password.py" once to make or reset the admin
 
     conn.commit()
     cursor.close()
     conn.close()
 
-    # Make sure an older database also gets the newer columns.
+    # so an older database also gets the new columns
     upgrade_database()
 
 
-# Columns added for Return Transactions: (column name, definition).
+# columns for Return Transactions (column name, definition)
 RETURN_COLUMNS = [
     ("returned_at", "DATETIME NULL"),
     ("returned_by", "INT NULL"),
     ("returned_quantity", "INT NULL"),
     ("return_condition", "ENUM('New', 'Good', 'Fair', 'Needs Repair', 'Damaged', 'Lost') NULL"),
     ("return_notes", "VARCHAR(255) NULL"),
-    # When the last overdue reminder email was sent (it is repeated every few days).
+    # when the last overdue reminder email was sent (it repeats every few days)
     ("overdue_reminder_sent_at", "DATETIME NULL"),
-    # Why the equipment is needed, and why a request was denied.
+    # why the equipment is needed and why the request was denied
     ("purpose", "VARCHAR(255) NULL"),
     ("deny_reason", "VARCHAR(255) NULL"),
-    # When the borrower said "I returned it" in the app. The borrowing stays active (and still counts
-    # toward the borrow limit) until Admin / Staff confirm they received the item.
+    # when the borrower said "I returned it" in the app. still active (and still counts
+    # in the borrow limit) until admin / staff confirm they got the item.
     ("return_requested_at", "DATETIME NULL"),
 ]
 
 
 def upgrade_database():
     """
-    Upgrade an existing database:
-      - email_verifications: add the wrong-attempts counter.
-      - borrow_requests: add what is needed to support returns.
-    Safe to run many times: it only changes what is still missing and
-    it never deletes or rewrites existing users or borrowing records.
+    Upgrade an old database:
+      - email_verifications: add the wrong attempts counter
+      - borrow_requests: add the columns needed for returns
+    Safe to run many times. It only adds what is missing and never deletes
+    or changes the users and borrowing records.
     """
     conn = get_connection()
     cursor = conn.cursor()
@@ -198,19 +198,19 @@ def upgrade_database():
         )
         found = [row[0] for row in cursor.fetchall()]
         for name, definition in columns:
-            if found and name not in found:  # (existing rows get the default / NULL)
+            if found and name not in found:  # (old rows get the default or NULL)
                 cursor.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
         conn.commit()
 
     add_missing_columns("users", [
         ("failed_logins", "INT NOT NULL DEFAULT 0"),
         ("locked_until", "DATETIME NULL"),
-        # 1 = account made by an admin with a temporary password; cleared when the user changes it.
+        # 1 = admin made the account with a temp password, cleared once the user changes it
         ("must_change_password", "TINYINT(1) NOT NULL DEFAULT 0"),
     ])
     add_missing_columns("email_verifications", [("attempts", "INT NOT NULL DEFAULT 0")])
-    # under_repair: units out of service after a damaged return.
-    # is_deleted: equipment is hidden instead of erased so borrowing history is kept.
+    # under_repair: units that cannot be used after a damaged return
+    # is_deleted: equipment is only hidden, not erased, so the history stays
     add_missing_columns("equipment", [
         ("under_repair", "INT NOT NULL DEFAULT 0"),
         ("is_deleted", "TINYINT(1) NOT NULL DEFAULT 0"),
@@ -227,13 +227,13 @@ def upgrade_database():
             column_type = column_type.decode()
         existing[name] = column_type
 
-    # The table does not exist yet, so there is nothing to upgrade.
+    # no table yet so nothing to upgrade
     if not existing:
         cursor.close()
         conn.close()
         return
 
-    # 1. Allow the 'Returned' and 'Cancelled' statuses.
+    # 1. allow the 'Returned' and 'Cancelled' status
     if "Returned" not in existing.get("status", "") or "Cancelled" not in existing.get("status", ""):
         cursor.execute(
             "ALTER TABLE borrow_requests MODIFY status "
@@ -241,7 +241,7 @@ def upgrade_database():
             "NOT NULL DEFAULT 'Pending'"
         )
 
-    # 2. Add the return columns that are missing.
+    # 2. add the return columns that are missing
     for name, definition in RETURN_COLUMNS:
         if name not in existing:
             cursor.execute(f"ALTER TABLE borrow_requests ADD COLUMN {name} {definition}")
@@ -252,7 +252,7 @@ def upgrade_database():
                     "REFERENCES users(id) ON DELETE SET NULL"
                 )
 
-    # 3. Allow the Damaged / Lost return conditions (older records keep their value).
+    # 3. allow Damaged / Lost as return condition (old records keep their value)
     if "Damaged" not in existing.get("return_condition", ""):
         cursor.execute(
             "ALTER TABLE borrow_requests MODIFY return_condition "

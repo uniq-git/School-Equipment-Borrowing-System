@@ -1,6 +1,4 @@
-"""
-Admin/Staff dialog for registering a new equipment item into the catalog.
-"""
+"""Popup for admin / staff to add new equipment."""
 import os
 from tkinter import filedialog, messagebox
 import customtkinter as ctk
@@ -71,7 +69,7 @@ class AddEquipmentDialog(FormDialog):
 
 
 class EditEquipmentDialog(FormDialog):
-    """Admin/Staff: edit Name, Category, Quantity, Condition and Photo of an existing item."""
+    """Popup for admin / staff to edit the name, category, quantity, condition and photo."""
 
     def __init__(self, parent, item):
         super().__init__(parent, "Edit Equipment", "380x700")
@@ -90,7 +88,7 @@ class EditEquipmentDialog(FormDialog):
         self.quantity_entry = f.entry("Quantity", "0")
         self.quantity_entry.insert(0, str(item["quantity"]))
 
-        # Units taken out of service by a damaged return; set back to 0 once repaired.
+        # units out of service from a damaged return. back to 0 when repaired
         self.repair_entry = f.entry("Units Under Repair", "0")
         self.repair_entry.insert(0, str(item.get("under_repair") or 0))
 
@@ -126,7 +124,7 @@ class EditEquipmentDialog(FormDialog):
 
 
 class ManageCategoriesDialog(FormDialog):
-    """Admin/Staff: add or delete equipment categories."""
+    """Popup for admin / staff to add or delete categories."""
 
     def __init__(self, parent):
         super().__init__(parent, "Manage Categories", "380x540")

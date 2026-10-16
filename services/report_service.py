@@ -1,4 +1,4 @@
-"""Report generation for the admin dashboard: build report rows, export them to CSV, and make a printable page."""
+"""Reports for the admin dashboard: make the report rows, export to CSV and make a printable page."""
 import csv
 import html
 from datetime import date, datetime
@@ -30,14 +30,14 @@ REPORT_COLUMNS = {
 
 
 def _d(value):
-    """Plain, sortable date text for reports (YYYY-MM-DD); '-' when empty."""
+    """Plain date text for reports (YYYY-MM-DD), '-' if empty."""
     if not value:
         return "-"
     return value.strftime("%Y-%m-%d") if hasattr(value, "strftime") else str(value)
 
 
 def _in_range(value, date_from, date_to):
-    """True when a date/datetime falls inside the (optional) range."""
+    """True if the date / datetime is inside the range (range is optional)."""
     if not date_from and not date_to:
         return True
     if value is None:
@@ -47,7 +47,7 @@ def _in_range(value, date_from, date_to):
 
 
 def _returned_in_range(date_from, date_to):
-    """Returned borrowings whose RETURN date is inside the range (these reports show the return date)."""
+    """Returned borrowings where the RETURN date is inside the range (these reports show the return date)."""
     return [r for r in borrow_service.get_borrow_history(returned_only=True)
             if _in_range(r["returned_at"], date_from, date_to)]
 
@@ -88,7 +88,7 @@ def _history(date_from=None, date_to=None):
 
 
 def _borrowing(date_from=None, date_to=None):
-    """Every approved borrowing (still out, overdue or returned) with its dates and status."""
+    """All approved borrowings (still out, overdue or returned) with dates and status."""
     return [(r["borrower_name"], r["equipment_name"], _d(r["approved_at"] or r["request_date"]),
              _d(r["due_date"]), _d(r["returned_at"]), r["state"], r["quantity"])
             for r in borrow_service.get_borrow_history(date_from, date_to)]
@@ -96,8 +96,8 @@ def _borrowing(date_from=None, date_to=None):
 
 def _condition(date_from=None, date_to=None):
     """
-    One row per returned borrowing (what condition it came back in, who returned it, when),
-    plus one row for any equipment that has not been returned yet so every item shows its current condition.
+    One row per returned borrowing (condition when returned, who returned it, when),
+    plus one row for equipment not returned yet so every item shows its current condition.
     """
     returns = {}
     for r in _returned_in_range(date_from, date_to):
@@ -131,9 +131,9 @@ _BUILDERS = {
 
 def get_report(report_type, date_from=None, date_to=None):
     """
-    Return (columns, rows) for a report type; each row is a tuple matching the columns.
-    date_from / date_to ('YYYY-MM-DD' or empty) limit borrowing reports by borrow date
-    (the Overdue Report by due date, Returned Items and Equipment Condition by return date). The inventory report always shows the current stock.
+    Return (columns, rows) for a report type. Each row is a tuple matching the columns.
+    date_from / date_to ('YYYY-MM-DD' or empty) limit the borrowing reports by borrow date
+    (Overdue Report by due date, Returned Items and Equipment Condition by return date). The inventory report always shows the current stock.
     """
     if report_type not in _BUILDERS:
         raise ValueError(f"Unknown report type: {report_type}")
@@ -142,7 +142,7 @@ def get_report(report_type, date_from=None, date_to=None):
 
 
 def export_csv(path, columns, rows):
-    # utf-8-sig so Excel opens names with accents correctly.
+    # utf-8-sig so Excel shows names with accents correctly
     with open(path, "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.writer(f)
         writer.writerow(columns)
@@ -150,7 +150,7 @@ def export_csv(path, columns, rows):
 
 
 def build_print_html(title, columns, rows, period=""):
-    """A standalone HTML page of the report that opens the browser's print dialog when loaded."""
+    """A separate HTML page of the report that opens the browser's print dialog when loaded."""
     esc = lambda v: html.escape(str(v))
     head = "".join(f"<th>{esc(c)}</th>" for c in ["No."] + list(columns))
     body = "".join("<tr>" + "".join(f"<td>{esc(v)}</td>" for v in (n, *row)) + "</tr>"

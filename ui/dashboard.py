@@ -1,4 +1,4 @@
-"""Student / Teacher dashboard (navy sidebar + light content area), built on ui.helpers."""
+"""Student / Teacher dashboard (navy sidebar and light content area), made with ui.helpers."""
 import os
 from collections import Counter
 
@@ -26,9 +26,9 @@ STATUS_COLORS = {"Pending": AMBER, "Active": colors.SUCCESS_GREEN, "Overdue": co
 
 
 def display_status(row):
-    """Status shown to the borrower. An approved borrowing is Active, or Overdue once it is past its due date."""
+    """Status the borrower sees. Approved is Active, or Overdue when past the due date."""
     if row["status"] == "Approved" and row.get("return_requested_at"):
-        return "Return Pending"  # the borrower sent the return; waiting for Admin / Staff to confirm
+        return "Return Pending"  # borrower sent the return, waiting for admin / staff to confirm
     if row["status"] == "Approved":
         return "Overdue" if row["state"] == "Overdue" else "Active"
     return row["status"]
@@ -80,7 +80,7 @@ class DashboardWindow(ctk.CTk):
         logo = os.path.join(ASSETS_DIR, "logo.png")
         if os.path.exists(logo):
             img = Image.open(logo)
-            self._logo = ctk.CTkImage(img, img, size=(92, 92))  # keep a reference so it isn't garbage collected
+            self._logo = ctk.CTkImage(img, img, size=(92, 92))  # keep a reference so it won't be garbage collected
             ctk.CTkLabel(brand, image=self._logo, text="").pack(side="left", padx=(0, 10))
         label(brand, "ICCT Equipment\nBorrowing System", 13, True, "white", justify="left").pack(side="left")
 
@@ -108,7 +108,7 @@ class DashboardWindow(ctk.CTk):
         button(who, "Log Out", self.logout, w=90, h=32, fg=colors.ACCENT_RED, hover=RED_HOVER).pack(side="left")
 
     def _build_welcome(self, parent):
-        """Greeting card with the borrower's request counts shown as colored chips."""
+        """Greeting card with the borrower's request counts as colored chips."""
         banner = ctk.CTkFrame(parent, fg_color=colors.CARD_WHITE, corner_radius=8)
         banner.grid(row=0, column=0, sticky="we", pady=(18, 12))
         banner.grid_columnconfigure(0, weight=1)
@@ -169,7 +169,7 @@ class DashboardWindow(ctk.CTk):
         return page
 
     def load_catalog(self):
-        # Refresh the category list too, so categories added by an admin appear without a restart.
+        # refresh the category list too so new categories from admin show without restart
         names = ["All"] + equipment_service.get_category_names()
         self.category_menu.configure(values=names)
         if self.category_var.get() not in names:
@@ -191,7 +191,7 @@ class DashboardWindow(ctk.CTk):
             self._item_card(item, available, n)
 
     def _item_card(self, item, available, n):
-        """One equipment card in the catalog grid: photo on top, details, availability, Request button."""
+        """One equipment card in the catalog: photo on top, then details, availability and Request button."""
         ok = available > 0
         color, tint = (colors.SUCCESS_GREEN, "#e3f4ea") if ok else (colors.ACCENT_RED, "#fbe4ea")
         card = ctk.CTkFrame(self.catalog_frame, fg_color=colors.CARD_WHITE, corner_radius=8)
@@ -252,7 +252,7 @@ class DashboardWindow(ctk.CTk):
             lbl.configure(text=str(counts[status]))
 
     def cancel_selected(self):
-        """The borrower withdraws one of their own pending requests."""
+        """Borrower cancels one of their own pending requests."""
         rid = selected_id(self.req_tree, "a pending request")
         if not rid:
             return
@@ -264,7 +264,7 @@ class DashboardWindow(ctk.CTk):
         self.load_catalog()
 
     def return_selected(self):
-        """The borrower tells Admin / Staff they returned an item. It stays active until they confirm."""
+        """Borrower tells admin / staff the item is returned. Stays active until they confirm."""
         tid = selected_id(self.req_tree, "an active borrowing")
         if not tid:
             return
@@ -298,7 +298,7 @@ class DashboardWindow(ctk.CTk):
         return page
 
     def load_history(self):
-        """The borrower's own completed (returned) borrowings."""
+        """Borrower's own returned borrowings."""
         rows = borrow_service.get_borrower_history(self.user["id"], returned_only=True)
         fill_table(self.history_tree, rows,
                    lambda r: (r["equipment_name"], fmt_date(r["approved_at"] or r["request_date"]),
@@ -308,7 +308,7 @@ class DashboardWindow(ctk.CTk):
     # ---------- shared ----------
 
     def prompt_password_change(self):
-        """Accounts made by an admin start with a temporary password: ask for a new one right away."""
+        """Accounts made by admin have a temporary password, so ask for a new one right away."""
         messagebox.showinfo("Change Your Password", "Your account was created with a temporary password.\n"
                             "Please set your own password now.")
         self.open_change_password()

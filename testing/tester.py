@@ -1,4 +1,4 @@
-"""Logic tests that run without MySQL or a display (the database layer is replaced by stubs)."""
+"""Logic tests that run without MySQL or a display (the database part is replaced by stubs)."""
 import sys
 import types
 import unittest
@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-# Stub the modules that need MySQL / SMTP so the pure logic can be imported anywhere.
+# fake the modules that need MySQL / SMTP so the logic can be imported anywhere
 db = types.ModuleType("database")
 db.get_connection = lambda: (_ for _ in ()).throw(RuntimeError("no database in tests"))
 sys.modules.setdefault("database", db)
@@ -95,7 +95,7 @@ class ReportTests(unittest.TestCase):
 
 
 class FakeCursor:
-    """Records every SQL statement; rowcount is 0 for statements that match `fail_on`."""
+    """Records every SQL statement. rowcount is 0 for statements that match `fail_on`."""
 
     def __init__(self, log, fail_on=None):
         self.log, self.fail_on, self.rowcount = log, fail_on, 1
@@ -130,7 +130,7 @@ class FakeConn:
 
 
 class MixedReturnTests(unittest.TestCase):
-    """A return with several conditions must be saved in one transaction (all or nothing)."""
+    """A return with many conditions must be saved in one transaction (all or nothing)."""
 
     request = {"id": 7, "user_id": 3, "equipment_id": 5, "quantity": 4, "status": "Approved",
                "request_date": datetime(2026, 10, 6), "due_date": date(2026, 10, 7),
@@ -154,10 +154,10 @@ class MixedReturnTests(unittest.TestCase):
     def test_two_good_two_damaged_saved_together(self):
         ok, message = self.run_return({"Good": 2, "Damaged": 2})
         self.assertTrue(ok, message)
-        self.assertEqual(sum(c.commits for c in self.conns), 1)  # a single commit for the whole return
+        self.assertEqual(sum(c.commits for c in self.conns), 1)  # 1 commit for the whole return
         self.assertEqual(sum(c.rollbacks for c in self.conns), 0)
         sql = [entry[0] for entry in self.log]
-        # 2 damaged units split off as their own Returned record, equipment marked under repair,
+        # 2 damaged units become their own Returned record, equipment marked under repair,
         # then the 2 good units close the original borrowing.
         self.assertTrue(any("quantity = quantity - %s" in q for q in sql))
         self.assertTrue(any(q.startswith("INSERT INTO borrow_requests") for q in self.log_text()))
@@ -165,7 +165,7 @@ class MixedReturnTests(unittest.TestCase):
         final = [e for e in self.log if "SET status = 'Returned'" in e[0]]
         self.assertEqual(len(final), 1)
         self.assertEqual(final[0][1][1], "Good")        # the closing record is the good units
-        self.assertEqual(final[0][1][-1], 2)            # only 2 units were still out at that point
+        self.assertEqual(final[0][1][-1], 2)            # only 2 units were still out then
         self.assertIn("2 Damaged", message)
         self.assertIn("2 Good", message)
 

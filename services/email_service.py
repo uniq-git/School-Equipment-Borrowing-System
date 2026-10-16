@@ -8,14 +8,14 @@ import config
 from database import get_connection
 
 MAX_CODE_ATTEMPTS = 5   # wrong guesses allowed per code
-RESEND_SECONDS = 60     # wait this long before another code can be requested
+RESEND_SECONDS = 60     # wait this long before asking for another code
 
 
-SMTP_TIMEOUT_SECONDS = 20  # give up instead of freezing the app when the mail server does not answer
+SMTP_TIMEOUT_SECONDS = 20  # give up so the app doesn't freeze when the mail server doesn't answer
 
 
 def _deliver(msg, recipients):
-    """Send one prepared message through the SMTP server from .env."""
+    """Send one message through the SMTP server from .env."""
     with smtplib.SMTP(config.SMTP_HOST, config.SMTP_PORT, timeout=SMTP_TIMEOUT_SECONDS) as server:
         server.starttls()
         server.login(config.SMTP_USER, config.SMTP_PASSWORD)
@@ -23,7 +23,7 @@ def _deliver(msg, recipients):
 
 
 class CodeRequestError(Exception):
-    """A problem that is safe to show the user (e.g. asking for codes too fast)."""
+    """A problem that is safe to show the user (like asking for codes too fast)."""
 
 
 def generate_code():
@@ -52,7 +52,7 @@ def save_verification_code(email, code):
         minutes=config.CODE_EXPIRY_MINUTES
     )
 
-    # Delete the old code so the new one is the only valid code.
+    # delete the old code so only the new code works
     cursor.execute(
         "DELETE FROM email_verifications WHERE email = %s",
         (email,)
@@ -104,14 +104,14 @@ def send_and_store_code(email):
     try:
         send_verification_email(email, code)
     except Exception:
-        clear_verification(email)  # nothing was delivered, so don't make the user wait
+        clear_verification(email)  # nothing was sent so don't make the user wait
         raise
 
     return code
 
 
 def verify_code(email, code):
-    """Check if the code entered by the student is correct (single use, limited tries)."""
+    """Check if the code the student typed is correct (one time use, limited tries)."""
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
 
@@ -143,7 +143,7 @@ def verify_code(email, code):
         conn.close()
         return False, message
 
-    # Verified: keep it valid for another CODE_EXPIRY_MINUTES so the form can be finished.
+    # verified: keep it valid for another CODE_EXPIRY_MINUTES so the form can be finished
     cursor.execute(
         "UPDATE email_verifications SET is_verified = 1, expires_at = %s WHERE id = %s",
         (datetime.now() + timedelta(minutes=config.CODE_EXPIRY_MINUTES), row["id"])
@@ -157,7 +157,7 @@ def verify_code(email, code):
 
 
 def is_email_verified(email):
-    """Check if the email was verified recently (and the verification was not used yet)."""
+    """Check if the email was verified recently (and not used yet)."""
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
 
@@ -177,7 +177,7 @@ def is_email_verified(email):
 
 
 def clear_verification(email):
-    """Throw away the codes for this email (call after a verification has been used)."""
+    """Delete the codes of this email (call this after a verification is used)."""
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -189,7 +189,7 @@ def clear_verification(email):
 
 
 def send_overdue_reminder(email, borrower_name, equipment_name, quantity, due_date, days_overdue):
-    """Email a borrower that their equipment is overdue."""
+    """Email a borrower that the equipment is overdue."""
     if not config.SMTP_USER or not config.SMTP_PASSWORD:
         raise RuntimeError(
             "SMTP is not configured. Please set SMTP_USER and SMTP_PASSWORD "
@@ -218,7 +218,7 @@ def send_overdue_reminder(email, borrower_name, equipment_name, quantity, due_da
 
 
 def send_denial_notice(email, borrower_name, equipment_name, quantity, reason=None):
-    """Email a borrower that their borrow request was denied."""
+    """Email a borrower that the borrow request was denied."""
     if not config.SMTP_USER or not config.SMTP_PASSWORD:
         raise RuntimeError(
             "SMTP is not configured. Please set SMTP_USER and SMTP_PASSWORD "
@@ -243,7 +243,7 @@ def send_denial_notice(email, borrower_name, equipment_name, quantity, reason=No
 
 
 def send_incident_notice(admin_emails, kind, equipment_name, quantity, borrower_name, processed_by, returned_on, notes=None):
-    """Email the admins that returned equipment was Damaged or Lost (kind = 'Damage' or 'Loss')."""
+    """Email the admins that returned equipment is Damaged or Lost (kind = 'Damage' or 'Loss')."""
     if not config.SMTP_USER or not config.SMTP_PASSWORD:
         raise RuntimeError(
             "SMTP is not configured. Please set SMTP_USER and SMTP_PASSWORD "

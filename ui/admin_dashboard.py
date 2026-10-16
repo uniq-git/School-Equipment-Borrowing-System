@@ -17,12 +17,12 @@ ROLE_OPTIONS = ["Admin", "Student", "Teacher", "Staff"]
 
 
 def _matches(query, *values):
-    """True when the search text appears in any of the values (an empty search matches everything)."""
+    """True if the search text is in any of the values. Empty search matches all."""
     query = query.strip().lower()
     return not query or any(query in str(v).lower() for v in values)
 
 
-# Widths are sized to fit the table area at the minimum window width.
+# widths fit the table at the smallest window size
 USER_COLS = [("ID", 34), ("Full Name", 150), ("ID Number", 105), ("Email", 190),
              ("Role", 65), ("Verified", 65), ("Status", 60), ("Created", 90)]
 EQUIPMENT_COLS = [("ID", 36), ("Name", 140), ("Category", 120), ("Quantity", 72), ("Available", 76),
@@ -35,20 +35,20 @@ HISTORY_COLS = [("ID", 36), ("Borrower", 140), ("Equipment", 150), ("Borrow Date
                 ("Return Date", 95), ("Status", 75), ("Condition", 90)]
 OVERDUE_COLS = [("ID", 36), ("Borrower", 140), ("Role", 70), ("Equipment", 150), ("Qty", 50),
                 ("Due Date", 95), ("Days Overdue", 100), ("Status", 70), ("Reminder", 75)]
-OVERDUE_CHECK_MS = 30 * 60 * 1000  # the scheduled overdue check runs every 30 minutes
+OVERDUE_CHECK_MS = 30 * 60 * 1000  # overdue check runs every 30 minutes
 RETURN_COLS = [("Transaction ID", 105), ("Borrower", 150), ("Equipment", 165), ("Quantity", 70),
                ("Borrow Date", 100), ("Due Date", 100), ("Status", 140)]
 
 
 def table(parent, cols, tags=None):
-    """table_page, but with a narrow fixed ID column (make_table forces a 60px minimum on every column)."""
+    """Same as table_page but with a narrow fixed ID column (make_table makes every column at least 60px)."""
     page, bar, tree = table_page(parent, cols, tags)
     tree.column(cols[0][0], width=cols[0][1], minwidth=cols[0][1], stretch=False)
     return page, bar, tree
 
 
 def db(sql, params=(), fetch=False):
-    """Run one query: returns the rows when fetch=True, otherwise commits."""
+    """Run one query. Returns the rows if fetch=True, if not it commits."""
     conn = get_connection()
     cur = conn.cursor(dictionary=True)
     try:
@@ -101,7 +101,7 @@ class AdminDashboard(ctk.CTk):
             self.after(600, self.prompt_password_change)
 
     def prompt_password_change(self):
-        """Accounts made by an admin start with a temporary password: ask for a new one right away."""
+        """Accounts made by admin have a temporary password, so ask for a new one right away."""
         messagebox.showinfo("Change Your Password", "Your account was created with a temporary password.\n"
                             "Please set your own password now.")
         self.open_change_password()
@@ -136,7 +136,7 @@ class AdminDashboard(ctk.CTk):
             self.kpi[key] = label(card, "0", 30, True, color, anchor="w")
             self.kpi[key].pack(fill="x", padx=16, pady=(10, 0))
             label(card, title + "  \u203a", 12, color=colors.TEXT_GRAY, anchor="w").pack(fill="x", padx=16, pady=(0, 12))
-            for w in (card, *card.winfo_children()):  # the whole card jumps to the matching page
+            for w in (card, *card.winfo_children()):  # click anywhere on the card to go to that page
                 w.bind("<Button-1>", lambda _e, t=target: self.show_page(t))
 
         self.overview_pending = self._overview_panel(page, 0, "Waiting for approval", "Review all", "pending")
@@ -144,7 +144,7 @@ class AdminDashboard(ctk.CTk):
         return page
 
     def _overview_panel(self, page, col, title, link_text, target):
-        """White card with a heading and a 'view all' button; returns the frame to fill with rows."""
+        """White card with a title and a 'view all' button. Returns the frame where the rows go."""
         card = ctk.CTkFrame(page, fg_color=colors.CARD_WHITE, corner_radius=8)
         card.grid(row=1, column=col, sticky="nswe", padx=(0 if col == 0 else 8, 0), pady=(12, 0))
         head = ctk.CTkFrame(card, fg_color="transparent")
@@ -180,7 +180,7 @@ class AdminDashboard(ctk.CTk):
             pending = borrow_service.get_pending_requests()
             overdue = borrow_service.get_overdue_transactions()
         except Exception:
-            return  # keep the old numbers if the database cannot be reached right now
+            return  # if the database can't be reached, keep the old numbers
         self.kpi["pending"].configure(text=str(len(pending)))
         self.kpi["borrowed"].configure(text=str(summary["borrowed_transactions"]))
         self.kpi["overdue"].configure(text=str(len(overdue)))
@@ -244,7 +244,7 @@ class AdminDashboard(ctk.CTk):
         else:
             ok, msg = auth.set_user_status(int(uid), value)
         self.load_users()
-        if field == "role":  # the ID number changes with the role, so tell the admin
+        if field == "role":  # ID number changes when the role changes, so tell the admin
             (messagebox.showinfo if ok else messagebox.showerror)("Role" if ok else "Not Allowed", msg)
 
     def delete_user(self):
@@ -379,7 +379,7 @@ class AdminDashboard(ctk.CTk):
         return page
 
     def load_returns(self):
-        """Active (Approved) borrowings that can still be returned. Returned ones leave this list."""
+        """Active (Approved) borrowings that can still be returned. Returned ones are removed from this list."""
         rows = borrow_service.get_active_transactions()
         fill_table(self.returns_tree, rows,
                    lambda r: (r["borrower_name"], r["equipment_name"], r["quantity"],
@@ -431,12 +431,12 @@ class AdminDashboard(ctk.CTk):
                fg=colors.ENTRY_BG, hover=colors.BORDER_GRAY, text_color=colors.TEXT_DARK).pack(side="left", padx=10)
 
         self.report_tree = None
-        self.report = None  # (title, columns, rows) once a report has been generated
+        self.report = None  # (title, columns, rows) after a report is made
         self._show_report(report_service.REPORT_TYPES[0], [])
         return page
 
     def _show_report(self, report_type, rows):
-        """Rebuild the table with the columns of this report type and fill it with rows."""
+        """Rebuild the table with the columns of this report and fill in the rows."""
         if self.report_tree is not None:
             self.report_tree.master.destroy()
         columns = report_service.REPORT_COLUMNS[report_type]
@@ -501,7 +501,7 @@ class AdminDashboard(ctk.CTk):
         return page
 
     def load_history(self):
-        """Full borrowing history: every completed (returned) transaction."""
+        """Full borrowing history, all the returned transactions."""
         rows = [r for r in borrow_service.get_borrow_history(returned_only=True)
                 if _matches(self.history_search.get(), r["borrower_name"], r["equipment_name"],
                             r["return_condition"] or "")]
@@ -520,7 +520,7 @@ class AdminDashboard(ctk.CTk):
         return page
 
     def load_overdue(self):
-        """Active borrowings that are past their due date (the admin dashboard Overdue list)."""
+        """Active borrowings that are past the due date (Overdue list of the admin dashboard)."""
         rows = borrow_service.get_overdue_transactions()
         fill_table(self.overdue_tree, rows,
                    lambda r: (r["borrower_name"], r["borrower_role"], r["equipment_name"], r["quantity"],
@@ -530,19 +530,19 @@ class AdminDashboard(ctk.CTk):
         self._stat("overdue", len(rows))
 
     def start_overdue_check(self):
-        """Scheduled check: run now, then again every OVERDUE_CHECK_MS, without freezing the window."""
+        """Scheduled check. Runs now, then again every OVERDUE_CHECK_MS, without freezing the window."""
         threading.Thread(target=self._overdue_worker, daemon=True).start()
         self.after(OVERDUE_CHECK_MS, self.start_overdue_check)
 
     def _overdue_worker(self):
         try:
             borrow_service.run_overdue_check()
-        except Exception as exc:  # e.g. database not reachable; try again at the next check
+        except Exception as exc:  # like database not reachable, try again on the next check
             print(f"Overdue check failed: {exc}")
         try:
             self.after(0, self.load_overdue)
         except Exception:
-            pass  # the window was closed
+            pass  # window was closed
 
     # ---------- shared ----------
 

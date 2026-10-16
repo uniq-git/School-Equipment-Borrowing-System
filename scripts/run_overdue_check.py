@@ -1,9 +1,9 @@
 """
-Run the overdue check once from the command line (for Windows Task Scheduler / cron):
+Run the overdue check one time from the command line (for Windows Task Scheduler / cron):
     python scripts/run_overdue_check.py
 
-Every active borrowing that is past its due date gets a reminder email
-(repeated every few days until the equipment is returned).
+Every active borrowing past the due date gets a reminder email
+(repeats every few days until returned).
 """
 import os
 import sys

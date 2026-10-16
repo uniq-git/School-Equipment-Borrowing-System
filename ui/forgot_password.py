@@ -1,6 +1,6 @@
 """
-Forgot Password screen: verify your email with a 6-digit code, then set a new password.
-Reuses the same email_service verification-code system as registration.
+Forgot Password screen: verify email with a 6-digit code, then set the new password.
+Uses the same email_service verification code as register.
 """
 import customtkinter as ctk
 

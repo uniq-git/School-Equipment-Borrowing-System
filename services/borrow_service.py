@@ -4,9 +4,9 @@ from datetime import datetime, date
 from database import get_connection
 
 STATUS_OPTIONS = ["Pending", "Approved", "Denied", "Returned", "Cancelled"]
-REMINDER_REPEAT_DAYS = 3  # an overdue borrower is reminded again after this many days
+REMINDER_REPEAT_DAYS = 3  # overdue borrower gets reminded again after this many days
 DATE_FORMAT = "%Y-%m-%d"
-MAX_UNITS_PER_USER = 2  # most units one user may hold (pending + approved, not yet returned) at a time
+MAX_UNITS_PER_USER = 2  # most units one user can hold at a time (pending + approved, not yet returned)
 RETURN_ROLES = ("Admin", "Staff")
 CONDITION_OPTIONS = ["New", "Good", "Fair", "Needs Repair"]
 RETURN_CONDITIONS = ["Good", "Damaged", "Lost"]  # what the borrower brings back
@@ -39,12 +39,12 @@ def get_available_quantity(equipment_id, exclude_request_id=None):
     cursor.close()
     conn.close()
 
-    # Units under repair (damaged returns) are not available to borrow.
+    # units under repair (damaged returns) can't be borrowed
     return max(0, equipment["quantity"] - int(equipment["under_repair"] or 0) - int(borrowed))
 
 
 def get_units_held(user_id):
-    """Units this user has requested or borrowed and not yet returned (Pending + Approved)."""
+    """Units this user requested or borrowed that are not returned yet (Pending + Approved)."""
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
     cursor.execute(
@@ -229,9 +229,9 @@ def get_overdue_transactions():
 def _send_overdue_reminders():
     """
     Scheduled check (Overdue Handling in the flowchart).
-    Looks at every active (unreturned) borrowing; any that is past its due date
-    is Overdue. The borrower is emailed a reminder, and again every
-    REMINDER_REPEAT_DAYS days until the equipment is returned. Returns (reminders sent, reminders that failed, first error).
+    Checks every active (not returned) borrowing. If it is past the due date it is Overdue.
+    The borrower gets a reminder email, and again every REMINDER_REPEAT_DAYS days until returned.
+    Returns (reminders sent, reminders failed, first error).
     """
     from services import email_service
 
@@ -272,9 +272,9 @@ OVERDUE_CHECK_SECONDS = 30 * 60  # the background check repeats every 30 minutes
 
 def run_overdue_check():
     """
-    Run the overdue check. If another check is already running (for example the background one),
-    this call is skipped so nobody receives the same reminder twice.
-    Returns (reminders sent, reminders that failed, first error).
+    Run the overdue check. If another check is already running (like the background one)
+    this one is skipped so nobody gets the same reminder twice.
+    Returns (reminders sent, reminders failed, first error).
     """
     if not _overdue_lock.acquire(blocking=False):
         return 0, 0, None
@@ -287,9 +287,9 @@ def run_overdue_check():
 
 def start_overdue_checker():
     """
-    Start the overdue check in the background: once right away, then every 30 minutes.
-    It does not belong to any window, so it keeps working while only the login screen
-    or a student dashboard is open, not just the Admin/Staff dashboard.
+    Start the overdue check in the background. Runs right away, then every 30 minutes.
+    It is not part of any window so it works even if only the login screen
+    or a student dashboard is open, not only the admin / staff dashboard.
     """
     def loop():
         while True:
@@ -298,7 +298,7 @@ def start_overdue_checker():
 
                 if failed:
                     print(f"Overdue check: {failed} reminder(s) could not be sent ({first_error})")
-            except Exception as exc:  # e.g. MySQL is not running yet; try again at the next check
+            except Exception as exc:  # like mysql not running yet, try again on the next check
                 print(f"Overdue check failed: {exc}")
 
             time.sleep(OVERDUE_CHECK_SECONDS)
@@ -357,7 +357,7 @@ def get_request_by_id(request_id):
 
 
 def _check_reviewer(user_id):
-    """Only an active Admin or Staff account may approve or deny requests. Returns an error message or None."""
+    """Only an active Admin or Staff can approve or deny requests. Returns an error message or None."""
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
     cursor.execute("SELECT role, status FROM users WHERE id = %s", (user_id,))
@@ -396,8 +396,8 @@ def approve_request(request_id, approved_by_user_id, due_date_str=None):
         if due_date <= date.today():
             return False, "Due date must be after today."
 
-    # Lock the equipment row so two staff members approving at the same time
-    # cannot hand out more units than exist.
+    # lock the equipment row so 2 staff approving at the same time
+    # can't give out more units than there are
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
 
@@ -449,7 +449,7 @@ def approve_request(request_id, approved_by_user_id, due_date_str=None):
 
 
 def cancel_request(request_id, user_id):
-    """A borrower withdraws their own request while it is still Pending."""
+    """Borrower cancels their own request while it is still Pending."""
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
@@ -477,7 +477,7 @@ def _notify_denied(request):
             request["borrower_email"], request["borrower_name"],
             request["equipment_name"], request["quantity"], request.get("deny_reason")
         )
-    except Exception as exc:  # the request stays denied even if the email cannot be sent
+    except Exception as exc:  # request stays denied even if the email can't be sent
         print(f"Could not send the denial email: {exc}")
 
 
@@ -532,7 +532,7 @@ def deny_request(request_id, approved_by_user_id, reason=None):
 
 
 def _notify_admins_of_incident(request, return_condition, processed_by_name, notes=None):
-    """Notify Admin: email every active admin about a damage or loss report (runs in the background)."""
+    """Notify admin: email all active admins about a damage or loss report (runs in the background)."""
     from services import email_service
 
     try:
@@ -551,12 +551,12 @@ def _notify_admins_of_incident(request, return_condition, processed_by_name, not
             request["equipment_name"], request["quantity"], request["borrower_name"],
             processed_by_name, date.today().strftime("%B %d, %Y"), notes
         )
-    except Exception as exc:  # the return is already saved even if the email cannot be sent
+    except Exception as exc:  # return is already saved even if the email can't be sent
         print(f"Could not notify the admins: {exc}")
 
 
 def _load_return(request_id, processed_by_user_id):
-    """Checks every return needs. Returns (error_message, request, processor); error_message is None when all is fine."""
+    """Checks needed for every return. Returns (error_message, request, processor). error_message is None if all is fine."""
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
 
@@ -577,8 +577,8 @@ def _load_return(request_id, processed_by_user_id):
     if not request:
         return "Transaction not found.", None, None
 
-    # Only Admin / Staff can confirm a return (they check the item physically).
-    # A borrower uses request_return() to tell them it is on its way back.
+    # only Admin / Staff can confirm a return (they check the item)
+    # borrower uses request_return() to tell them it's on the way back
     if processor["role"] not in RETURN_ROLES:
         return "Only Admin or Staff can confirm that equipment was returned.", None, None
 
@@ -593,9 +593,9 @@ def _load_return(request_id, processed_by_user_id):
 
 def request_return(request_id, user_id):
     """
-    Borrower says "I returned this item" in the app. Nothing is returned yet: the borrowing stays
-    active and still counts toward the borrow limit until Admin / Staff confirm they physically
-    received it (process_split_return).
+    Borrower says "I returned this item" in the app. Nothing is returned yet. The borrowing stays
+    active and still counts in the borrow limit until admin / staff confirm they got
+    the item (process_split_return).
     """
     request = get_request_by_id(request_id)
 
@@ -628,13 +628,13 @@ def request_return(request_id, user_id):
 
 def _return_units(cursor, request, processed_by_user_id, condition, notes, quantity, remaining):
     """
-    Save ONE part of a return (for example the 2 damaged units of a 4-unit borrowing).
-    It only runs the SQL; the caller commits, so a mixed return is saved all together or not at all.
-    `remaining` is how many units of this borrowing are still out right now.
+    Save ONE part of a return (like the 2 damaged units of a 4-unit borrowing).
+    It only runs the SQL, the caller commits, so a mixed return is saved all together or not at all.
+    `remaining` is how many units of this borrowing are still out now.
     Returns (ok, error_message).
     """
     if quantity < remaining:
-        # Keep the rest as an active borrowing; the returned part becomes its own Returned record.
+        # the rest stays as active borrowing, the returned part becomes its own Returned record
         cursor.execute(
             "UPDATE borrow_requests SET quantity = quantity - %s, return_requested_at = NULL "
             "WHERE id = %s AND status = 'Approved' AND quantity = %s",
@@ -673,30 +673,30 @@ def _return_units(cursor, request, processed_by_user_id, condition, notes, quant
         if cursor.rowcount == 0:
             return False, "This borrowing was already returned or is no longer active."
 
-    # Update Equipment Condition and Availability.
+    # update the equipment condition and availability
     if condition == "Damaged":
-        # The returned units are out of service until an admin clears them in Edit Equipment.
+        # returned units are out of service until admin clears them in Edit Equipment
         cursor.execute(
             "UPDATE equipment SET condition_status = 'Needs Repair', "
             "under_repair = LEAST(quantity, under_repair + %s) WHERE id = %s",
             (quantity, request["equipment_id"])
         )
     elif condition == "Lost":
-        # The unit never came back, so it is taken out of the total quantity.
+        # the unit never came back so it is removed from the total quantity
         cursor.execute(
             "UPDATE equipment SET quantity = GREATEST(quantity - %s, 0), "
             "under_repair = LEAST(under_repair, quantity) WHERE id = %s",
             (quantity, request["equipment_id"])
         )
-    # Good: back in stock; the item's recorded condition is left as it was.
+    # Good: back in stock, the recorded condition stays the same
 
     return True, ""
 
 
 def check_split_parts(parts, notes):
     """
-    Check a mixed return such as {"Good": 2, "Damaged": 2, "Lost": 0}.
-    Returns (ok, message, cleaned) where cleaned only keeps the conditions with a quantity above 0.
+    Check a mixed return like {"Good": 2, "Damaged": 2, "Lost": 0}.
+    Returns (ok, message, cleaned). cleaned only keeps the conditions with quantity above 0.
     """
     cleaned = {}
 
@@ -729,9 +729,9 @@ def check_split_parts(parts, notes):
 def process_split_return(request_id, processed_by_user_id, parts, notes=None):
     """
     Return a borrowing where the units came back in different conditions
-    (for example 2 Good + 2 Damaged). Each condition is saved as its own Returned record,
-    so reports count only the damaged units as damaged. Units not entered stay borrowed.
-    All parts are saved in ONE database transaction: if anything fails, nothing is saved.
+    (like 2 Good + 2 Damaged). Each condition is saved as its own Returned record,
+    so the reports only count the damaged units as damaged. Units not entered stay borrowed.
+    All parts are saved in ONE database transaction, if something fails nothing is saved.
     """
     ok, message, cleaned = check_split_parts(parts, notes)
 
@@ -760,7 +760,7 @@ def process_split_return(request_id, processed_by_user_id, parts, notes=None):
     try:
         remaining = total
 
-        # Damaged and Lost first (they carry the notes), then Good.
+        # Damaged and Lost first (they have the notes), then Good
         for condition in ("Damaged", "Lost", "Good"):
             quantity = cleaned.get(condition)
 
@@ -792,7 +792,7 @@ def process_split_return(request_id, processed_by_user_id, parts, notes=None):
     if entered < total:
         result += f" {total - entered} unit(s) are still borrowed."
 
-    # Log Damage / Loss Report + Notify Admin (the report is the saved return record).
+    # log the Damage / Loss report and notify admin (the report is the saved return record)
     for condition in ("Damaged", "Lost"):
         if condition in cleaned:
             threading.Thread(

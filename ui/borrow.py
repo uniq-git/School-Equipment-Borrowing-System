@@ -1,4 +1,4 @@
-"""Dialogs for the borrowing workflow: Request -> Approval -> Borrowing Transaction -> Return."""
+"""Popups for the borrowing flow: Request -> Approval -> Borrowing Transaction -> Return."""
 from datetime import date, timedelta
 
 import customtkinter as ctk
@@ -9,7 +9,7 @@ from services import borrow_service
 
 
 class RequestEquipmentDialog(FormDialog):
-    """Student / Teacher: submit a borrow request."""
+    """Student / Teacher: send a borrow request."""
 
     def __init__(self, parent, user, item, available, on_success=None):
         super().__init__(parent, "Request to Borrow", "360x520")
@@ -32,7 +32,7 @@ class RequestEquipmentDialog(FormDialog):
 
 
 class ApproveRequestDialog(FormDialog):
-    """Admin / Staff: approve a Pending request, optionally overriding the due date."""
+    """Admin / Staff: approve a Pending request. Can change the due date."""
 
     def __init__(self, parent, approver_user, request_row, on_success=None):
         super().__init__(parent, "Approve Request", "360x540")
@@ -58,7 +58,7 @@ class ApproveRequestDialog(FormDialog):
 
 
 class DenyRequestDialog(FormDialog):
-    """Admin / Staff: deny a Pending request with an optional reason (included in the borrower's email)."""
+    """Admin / Staff: deny a Pending request. The reason is optional and goes in the borrower's email."""
 
     def __init__(self, parent, approver_user, request_row, on_success=None):
         super().__init__(parent, "Deny Request", "360x340")
@@ -76,7 +76,7 @@ class DenyRequestDialog(FormDialog):
 
 
 class ReturnDialog(FormDialog):
-    """Borrower / Admin / Staff: record the return of an active borrowing (uses borrow_service.process_return)."""
+    """Borrower / Admin / Staff: return an active borrowing (uses borrow_service.process_return)."""
 
     def __init__(self, parent, processor_user, txn, on_success=None):
         super().__init__(parent, "Return Equipment", "380x700")
@@ -101,7 +101,7 @@ class ReturnDialog(FormDialog):
         self.damaged_var = self._qty_field("Damaged (qty)", "0")
         self.lost_var = self._qty_field("Lost (qty)", "0")
 
-        # The notes box only shows while at least 1 unit is Damaged or Lost.
+        # notes box only shows when at least 1 unit is Damaged or Lost
         self.notes_label = f.label("Notes (what happened?)")
         self.notes_entry = f.place(f.input(self, "Describe the damage or loss", 300))
         self._toggle_notes()
@@ -109,7 +109,7 @@ class ReturnDialog(FormDialog):
         self.submit_btn.configure(fg_color=colors.SUCCESS_GREEN, hover_color="#166838")
 
     def _qty_field(self, text, value):
-        """A labelled quantity box; the notes box is re-checked every time it changes."""
+        """Quantity box with a label. Notes box is checked again every time it changes."""
         var = ctk.StringVar(value=value)
         self.f.label(text)
         self.f.place(self.f.input(self, "0", 300, textvariable=var))
@@ -122,8 +122,8 @@ class ReturnDialog(FormDialog):
         return int(text) if text.isdigit() else 0
 
     def _toggle_notes(self):
-        """Show the notes box only if Damaged or Lost is 1 or more; hide it for Good-only returns."""
-        if not hasattr(self, "notes_entry"):  # the form is still being built
+        """Show the notes box only if Damaged or Lost is 1 or more. Hidden for Good only."""
+        if not hasattr(self, "notes_entry"):  # form is still being built
             return
         needs_notes = self._qty(self.damaged_var) > 0 or self._qty(self.lost_var) > 0
         if needs_notes:

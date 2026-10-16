@@ -24,17 +24,37 @@ import sys
 ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ROOT)
 
-from services import borrow_service  # noqa: E402
+
 import customtkinter as ctk
+import mysql.connector
+import tkinter as tk
+
+from services import borrow_service  # noqa: E402
+from tkinter import messagebox
 from ui.login import LoginWindow
 
 ctk.set_appearance_mode("light")
 ctk.set_default_color_theme("blue")
 ctk.ThemeManager.theme["CTkFont"]["family"] = "Arial"
 
+def show_unexpected_error(self, exc_type, exc_value, exc_traceback):
+    """Show a message when a button or event fails."""
+    if issubclass(exc_type, mysql.connector.Error):
+        messagebox.showerror(
+            "Database problem",
+            "The system cannot reach the database.\n\n"
+            "Make sure MySQL is running in the XAMPP Control Panel, then try again.\n\n"
+            f"Details: {exc_value}",
+        )
+    else:
+        messagebox.showerror("Unexpected error", f"Something went wrong: {exc_value}")
+    print(f"Error in a Tkinter callback: {exc_value!r}")
+
+
+tk.Tk.report_callback_exception = show_unexpected_error
 
 def upgrade_existing_database():
-    """
+    """ 
     Create the database and tables if they do not exist yet, and add any newer
     columns (return, purpose, cancel and password-change columns) to an existing database.
     Safe to run every time; it never deletes data.
@@ -51,3 +71,4 @@ if __name__ == "__main__":
     borrow_service.start_overdue_checker()  # overdue reminders, even when no Admin dashboard is open
     app = LoginWindow()
     app.mainloop()
+    

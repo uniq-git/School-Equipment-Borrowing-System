@@ -1,4 +1,4 @@
-# Shared UI helpers: dashboards (sidebar, tables) and auth screens (login / register / forgot password)
+# Shared UI helpers for dashboards (sidebar, tables) and auth screens (login / register / forgot password)
 import calendar
 import os
 import threading
@@ -25,7 +25,7 @@ def label(parent, text, size=12, bold=False, color=colors.TEXT_DARK, **kw):
 
 
 def button(parent, text, command, w=100, h=36, fg=colors.BUTTON_BLUE, hover=colors.BUTTON_BLUE_HOVER, **kw):
-    kw.setdefault("corner_radius", 3)  # square-ish corners, like a normal desktop button
+    kw.setdefault("corner_radius", 3)  # square-ish corners like a normal desktop button
     return ctk.CTkButton(parent, text=text, command=command, width=w, height=h,
                          fg_color=fg, hover_color=hover, **kw)
 
@@ -36,13 +36,13 @@ def entry(parent, placeholder, w=300, h=36, **kw):
 
 
 def soft_button(parent, text, command, w=100, h=36):
-    """Light grey button for secondary actions (+ New, Browse)."""
+    """Light gray button for other actions (+ New, Browse)."""
     return button(parent, text, command, w=w, h=h, fg=colors.ENTRY_BG, hover=colors.BORDER_GRAY,
                   text_color=colors.TEXT_DARK)
 
 
 def fmt_date(value):
-    """Short, readable date (e.g. 'Sep 29, 2026'); passes through anything that isn't a date."""
+    """Short date like 'Sep 29, 2026'. Anything that is not a date is returned as is."""
     if not value:
         return "-"
     return value.strftime("%b %d, %Y") if hasattr(value, "strftime") else str(value)
@@ -60,7 +60,7 @@ def build_sidebar(window, nav_items, on_select, user, on_logout, on_change_passw
     logo = os.path.join(ASSETS_DIR, "logo.png")
     if os.path.exists(logo):
         img = Image.open(logo)
-        window._logo = ctk.CTkImage(img, img, size=(120, 120))  # keep a reference so it isn't garbage collected
+        window._logo = ctk.CTkImage(img, img, size=(120, 120))  # keep a reference so it won't be garbage collected
         ctk.CTkLabel(side, image=window._logo, text="").pack(pady=(12, 4))
     label(side, "ICCT Colleges\nFoundation, Inc.", 15, True, "white").pack(pady=(0 if os.path.exists(logo) else 30, 0))
     label(side, "Equipment Borrowing System", 11, color=NAV_TEXT).pack(pady=(2, 6))
@@ -94,8 +94,10 @@ def build_sidebar(window, nav_items, on_select, user, on_logout, on_change_passw
 
 
 def build_topbar(parent, stats):
-    """Page title on the left, stat boxes on the right. stats = [(key, title, color)].
-    Returns (title_label, {key: value_label})."""
+    """
+    Page title on the left, stat boxes on the right. stats = [(key, title, color)].
+    Returns (title_label, {key: value_label}).
+    """
     bar = ctk.CTkFrame(parent, fg_color="transparent")
     bar.grid(row=0, column=0, sticky="we", padx=20, pady=(16, 10))
     bar.grid_columnconfigure(0, weight=1)
@@ -116,7 +118,7 @@ def build_topbar(parent, stats):
 
 
 def build_main(window):
-    """Right-hand area: returns (main frame, body frame) with the topbar slot in row 0."""
+    """Right side: returns (main frame, body frame). Topbar goes in row 0."""
     main = ctk.CTkFrame(window, fg_color=colors.BG_LIGHT, corner_radius=0)
     main.grid(row=0, column=1, sticky="nswe")
     main.grid_columnconfigure(0, weight=1)
@@ -129,7 +131,7 @@ def build_main(window):
 
 
 def show_page(key, pages, nav, title_lbl, titles):
-    """Show one page, highlight its nav button and set the page title."""
+    """Show one page, highlight its nav button and change the page title."""
     for name, page in pages.items():
         page.grid(row=0, column=0, sticky="nswe") if name == key else page.grid_forget()
     for name, btn in nav.items():
@@ -144,8 +146,10 @@ LEFT_COLS = {"Full Name", "Email", "Name", "Category", "Added By", "Borrower", "
 
 
 def tool_row(bar, left=(), right=(), search=None, pady=(8, 8)):
-    """A row of buttons inside a toolbar card. left/right = [(text, command[, kind[, width]])],
-    kind = blue / green / red; search = (StringVar, placeholder). Returns the row frame."""
+    """
+    Row of buttons inside the toolbar card. left/right = [(text, command[, kind[, width]])],
+    kind = blue / green / red, search = (StringVar, placeholder). Returns the row frame.
+    """
     row = ctk.CTkFrame(bar, fg_color="transparent")
     row.pack(fill="x", pady=pady)
     if search:
@@ -162,7 +166,7 @@ def tool_row(bar, left=(), right=(), search=None, pady=(8, 8)):
 
 
 def table_page(parent, cols, tags=None):
-    """Page with a white toolbar card (row 0) and a styled table card (row 1). Returns (page, toolbar, tree)."""
+    """Page with a white toolbar card (row 0) and a table card (row 1). Returns (page, toolbar, tree)."""
     page = ctk.CTkFrame(parent, fg_color="transparent")
     page.grid_columnconfigure(0, weight=1)
     page.grid_rowconfigure(1, weight=1)
@@ -188,7 +192,7 @@ def setup_table_style():
 
 
 def make_table(page, cols, tags=None):
-    """White card with a styled Treeview + scrollbar in row 1. cols = [(heading, min width)]."""
+    """White card with a Treeview and scrollbar in row 1. cols = [(heading, min width)]."""
     card = ctk.CTkFrame(page, fg_color=colors.CARD_WHITE, corner_radius=4)
     card.grid(row=1, column=0, sticky="nswe")
     card.grid_columnconfigure(0, weight=1)
@@ -209,8 +213,10 @@ def make_table(page, cols, tags=None):
 
 
 def fill_table(tree, rows, values_of, tag_of=lambda row: (), show_id=False):
-    """Replace the table's rows. Each row (a dict with an 'id') becomes (row number, *values_of(row)).
-    With show_id=True the first column shows the row's real database id instead of the row number."""
+    """
+    Replace the rows of the table. Each row (dict with an 'id') becomes (row number, *values_of(row)).
+    If show_id=True the first column shows the real database id instead of the row number.
+    """
     tree.delete(*tree.get_children())
     for n, row in enumerate(rows, 1):
         tree.insert("", "end", iid=str(row["id"]), values=(row["id"] if show_id else n, *values_of(row)),
@@ -218,7 +224,7 @@ def fill_table(tree, rows, values_of, tag_of=lambda row: (), show_id=False):
 
 
 def selected_id(tree, what):
-    """Selected row's id, or None after telling the user to pick one."""
+    """Id of the selected row. If none is selected it tells the user to pick one and returns None."""
     if not tree.selection():
         messagebox.showinfo("No selection", f"Please select {what} first.")
         return None
@@ -228,15 +234,17 @@ def selected_id(tree, what):
 # Auth screens (login / register / forgot password)
 
 def link(parent, text, command, size=12, bold=True, w=20, **kw):
-    """Flat blue text button, e.g. 'Forgot password?'."""
+    """Flat blue text button like 'Forgot password?'."""
     return ctk.CTkButton(parent, text=text, command=command, width=w, fg_color="transparent", hover=False,
                          text_color=colors.LINK_BLUE,
                          font=ctk.CTkFont(size=size, weight="bold" if bold else "normal"), **kw)
 
 
 class AuthWindow(ctk.CTk):
-    """Navy left panel + white card on the right. Put your widgets in self.card.
-    height = window height, card_h = card height, scroll = make the card scrollable."""
+    """
+    Navy left panel and white card on the right. Put your widgets in self.card.
+    height = window height, card_h = card height, scroll = card can scroll.
+    """
 
     def __init__(self, title, height, card_h, scroll=False):
         super().__init__()
@@ -270,13 +278,13 @@ class AuthWindow(ctk.CTk):
 
 
 class Fields:
-    """Builds the repeated rows of an auth card. pad_x = left padding, h = input height, gap = space above labels."""
+    """Makes the repeated rows of an auth card. pad_x = left padding, h = input height, gap = space above the labels."""
 
     def __init__(self, card, pad_x, h=36, gap=16):
         self.card, self.pad_x, self.h, self.gap = card, pad_x, h, gap
 
     def place(self, widget, pady=0):
-        """Pack any widget into the card with the card's left padding; returns the widget."""
+        """Put any widget in the card using the card's left padding. Returns the widget."""
         widget.pack(anchor="w", padx=self.pad_x, pady=pady)
         return widget
 
@@ -288,14 +296,14 @@ class Fields:
                             fg_color=colors.ENTRY_BG, border_color=colors.BORDER_GRAY,
                             text_color=colors.TEXT_DARK, **kw)
 
-    title = label  # same as label(); used by the pop-up forms
+    title = label  # same as label(), used by the popup forms
 
     def entry(self, text, placeholder, gap=None):
         self.label(text, gap)
         return self.place(self.input(self.card, placeholder, 300))
 
     def menu(self, text, values, variable, command=None):
-        """Labelled dropdown. Returns the option menu."""
+        """Dropdown with a label. Returns the option menu."""
         self.label(text)
         return self.place(ctk.CTkOptionMenu(self.card, values=values, variable=variable, width=300,
                                             command=command))
@@ -318,7 +326,7 @@ class Fields:
         return entry
 
     def date(self, text, min_date=None, initial=None, gap=None):
-        """Labelled date field that opens a calendar (no typing). Returns the DatePicker; .get() gives YYYY-MM-DD."""
+        """Date field with a label that opens a calendar (no typing). Returns the DatePicker, .get() gives YYYY-MM-DD."""
         self.label(text, gap)
         return self.place(DatePicker(self.card, width=300, height=self.h, min_date=min_date, initial=initial))
 
@@ -332,8 +340,10 @@ class Fields:
 
 
 class DatePicker(ctk.CTkFrame):
-    """A date field that opens a small month calendar instead of making the user type.
-    get() returns 'YYYY-MM-DD' (or '' when nothing is picked); days before min_date cannot be chosen."""
+    """
+    Date field that opens a small month calendar so the user doesn't type.
+    get() gives 'YYYY-MM-DD' (or '' if nothing is picked). Days before min_date can't be chosen.
+    """
 
     DISABLED_TEXT = "#b4bac4"
 
@@ -351,7 +361,7 @@ class DatePicker(ctk.CTkFrame):
         self.arrow.pack(side="right", fill="y", padx=3, pady=3)
         for w in (self, self.text):
             w.bind("<Button-1>", lambda _e: self.toggle())
-        self.winfo_toplevel().bind("<Button-1>", self._on_outside_click, add="+")  # click elsewhere closes it
+        self.winfo_toplevel().bind("<Button-1>", self._on_outside_click, add="+")  # clicking outside closes it
         if initial:
             self.set(initial)
 
@@ -361,12 +371,12 @@ class DatePicker(ctk.CTkFrame):
         return self.value.isoformat() if self.value else ""
 
     def clear(self):
-        """Forget the picked date and show the placeholder again."""
+        """Clear the picked date and show the placeholder again."""
         self.value = None
         self.text.configure(text=self.placeholder, text_color=colors.TEXT_GRAY)
 
     def set(self, value):
-        """Accepts a date or a 'YYYY-MM-DD' string; anything unreadable is ignored."""
+        """Takes a date or a 'YYYY-MM-DD' string. If it can't be read it is ignored."""
         if isinstance(value, datetime):
             value = value.date()
         elif isinstance(value, str):
@@ -390,7 +400,7 @@ class DatePicker(ctk.CTkFrame):
         self.popup = tk.Toplevel(self)
         self.popup.overrideredirect(True)
         try:
-            self.popup.attributes("-topmost", True)  # stay above the dialog
+            self.popup.attributes("-topmost", True)  # stay on top of the dialog
         except tk.TclError:
             pass
         self.popup.configure(bg=colors.CARD_WHITE, highlightthickness=1, highlightbackground=colors.BORDER_GRAY)
@@ -453,7 +463,7 @@ class DatePicker(ctk.CTkFrame):
         self._position()
 
     def _position(self):
-        """Put the calendar just under the field, or above it when there is no room below."""
+        """Put the calendar under the field, or above it if there is no space below."""
         pop = self.popup
         pop.update_idletasks()
         x, y = self.winfo_rootx(), self.winfo_rooty() + self.winfo_height() + 2
@@ -464,26 +474,26 @@ class DatePicker(ctk.CTkFrame):
 
 
 class FormDialog(ctk.CTkToplevel):
-    """Pop-up form: heading, fields via self.f, then footer() adds the status line + submit/Cancel buttons."""
+    """Popup form: heading, fields with self.f, then footer() adds the status line and the submit / Cancel buttons."""
 
     def __init__(self, parent, title, size):
         super().__init__(parent)
         self.parent = parent
         self.title(title)
         w, h = map(int, size.split("x"))
-        h = min(h, int((self.winfo_screenheight() - 120) / self._get_window_scaling()))  # keep buttons on screen
+        h = min(h, int((self.winfo_screenheight() - 120) / self._get_window_scaling()))  # keep the buttons on screen
         self.geometry(f"{w}x{h}")
         self.resizable(False, False)
         self.configure(fg_color=colors.CARD_WHITE)
         self.transient(parent)
-        self.after(150, lambda: (self.lift(), self.focus_force(), self.grab_set()))  # grab once visible
+        self.after(150, lambda: (self.lift(), self.focus_force(), self.grab_set()))  # grab after it is visible
         self.f = Fields(self, 30, h=34, gap=10)
         self.heading = label(self, title, 20, True)
         self.heading.pack(anchor="w", padx=30, pady=(16, 4))
 
     def footer(self, text, command, status_pady=(12, 0)):
         foot = ctk.CTkFrame(self, fg_color="transparent")
-        foot.pack(side="bottom", fill="x", before=self.heading)  # packed first, so it is never cut off
+        foot.pack(side="bottom", fill="x", before=self.heading)  # packed first so it never gets cut off
         ff = Fields(foot, 30)
         self.status = ff.error(status_pady)
         self.submit_btn = ff.submit(text, command, pady=(12, 6))
@@ -494,7 +504,7 @@ class FormDialog(ctk.CTkToplevel):
         self.status.configure(text=message, text_color=colors.SUCCESS_GREEN if ok else colors.ACCENT_RED)
 
     def result(self, ok, message, refresh=None, delay=1200):
-        """Show the outcome; on success refresh the parent list and close after `delay` ms."""
+        """Show the result. If success, refresh the parent list and close after `delay` ms."""
         self.show(message, ok)
         if ok:
             self.submit_btn.configure(state="disabled")
@@ -504,9 +514,11 @@ class FormDialog(ctk.CTkToplevel):
 
 
 class VerifyMixin:
-    """Email verification (send code / enter code) for Register and Forgot Password.
-    The window needs self.email_entry and self.error_label, and a Fields helper to build the section."""
-    must_exist = True  # True: email must already be registered (reset). False: must be new (register).
+    """
+    Email verification (send code / enter code) for Register and Forgot Password.
+    The window needs self.email_entry, self.error_label and a Fields helper to build the section.
+    """
+    must_exist = True  # True: email must be registered already (reset). False: must be new (register).
 
     def verify_section(self, f, verify_text, send_h=32):
         f.place(button(f.card, "Send Verification Code", self.handle_send_code, w=300, h=send_h,
@@ -542,13 +554,13 @@ class VerifyMixin:
                 self._status(f"Code sent to {email}. Check your inbox.")
             except email_service.CodeRequestError as exc:
                 self._status(str(exc), colors.ACCENT_RED)
-            except Exception:  # don't show mail-server details to the user
+            except Exception:  # don't show mail server details to the user
                 self._status("Could not send the email. Please try again later.", colors.ACCENT_RED)
 
         threading.Thread(target=worker, daemon=True).start()
 
     def _on_code_changed(self, *_):
-        """Auto verify the moment a 6-digit code has been typed or pasted in."""
+        """Verify automatically once a 6-digit code is typed or pasted."""
         code = self.code_var.get().strip()
         if len(code) == 6 and code.isdigit() and code != self._last_auto_checked_code:
             self._last_auto_checked_code = code
@@ -563,7 +575,7 @@ class VerifyMixin:
         self._status(message, colors.SUCCESS_GREEN if ok else colors.ACCENT_RED)
 
     def done(self, message, next_step):
-        """Show a success message, then run next_step (for example: open the login screen) after 1.5 s."""
+        """Show a success message, then run next_step (like opening the login screen) after 1.5 s."""
         self.error_label.configure(text="")
         self._status(message, colors.SUCCESS_GREEN)
         self.after(1500, next_step)
