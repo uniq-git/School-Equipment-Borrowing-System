@@ -14,17 +14,31 @@ DEFAULT_CATEGORIES = [
 ]
 
 
+class DatabaseManager:
+    
+    _instance = None # holds the one and only object
+    
+    def __new__(cls):
+        if cls._instance is None: #first time create it
+            cls._instance = super().__new__(cls)
+            cls._instance.setting = {
+                "host": config.DB_HOST,
+                "port": config.DB_PORT,
+                "user": config.DB_USER,
+                "password": config.DB_PASSWORD,
+                "database": config.DB_NAME,
+            }
+            
+            return cls._instance #every later call returns the same object
+        
+    def connect(self):
+            """it open new connection to the database"""
+            return mysql.connector.connect(**self.setting)
+        
 def get_connection():
-    """Connect to the database."""
-    return mysql.connector.connect(
-        host=config.DB_HOST,
-        port=config.DB_PORT,
-        user=config.DB_USER,
-        password=config.DB_PASSWORD,
-        database=config.DB_NAME,
-    )
-
-
+    """Connect to the database"""
+    return DatabaseManager().connect()
+    
 def init_database():
     """
     Create the database and tables if they are not there yet.
