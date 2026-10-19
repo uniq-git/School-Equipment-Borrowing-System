@@ -166,11 +166,15 @@ p {{ color: #666; font-size: 12px; margin: 4px 0 16px; }}
 table {{ border-collapse: collapse; width: 100%; font-size: 12px; }}
 th, td {{ border: 1px solid #bbb; padding: 6px 8px; text-align: left; }}
 th {{ background: #eee; }}
+@page {{ size: landscape; margin: 12mm; }}
+.noprint {{ margin-bottom: 14px; padding: 8px 18px; font-size: 14px; cursor: pointer; }}
+@media print {{ .noprint {{ display: none; }} }}
 </style></head>
 <body>
+<button class="noprint" onclick="window.print()">Print this report</button>
 <h1>ICCT Colleges Foundation, Inc. - Equipment Borrowing System</h1>
 <h1>{esc(title)}</h1>
 <p>Generated {datetime.now().strftime("%B %d, %Y %I:%M %p")} &middot; {len(rows)} records{esc(period)}</p>
 <table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>
-<script>window.onload = function () {{ window.print(); }};</script>
+<script>window.onload = function () {{ setTimeout(function () {{ window.print(); }}, 400); }};</script>
 </body></html>"""

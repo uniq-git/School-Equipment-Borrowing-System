@@ -487,7 +487,20 @@ class AdminDashboard(ctk.CTk):
         import webbrowser
         with tempfile.NamedTemporaryFile("w", suffix=".html", delete=False, encoding="utf-8") as f:
             f.write(report_service.build_print_html(*report))
-        webbrowser.open(pathlib.Path(f.name).as_uri())  # the page opens the print dialog by itself
+        url = pathlib.Path(f.name).as_uri()  # the page opens the print dialog by itself
+        
+        import os
+        import subprocess
+        roots = [os.environ.get(k, "") for k in ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA")]
+        parts = [r"Microsoft\Edge\Application\msedge.exe", r"Google\Chrome\Application\chrome.exe",
+                 r"Mozilla Firefox\firefox.exe"]
+        for root in roots:
+            for part in parts:
+                exe = os.path.join(root, part)
+                if root and os.path.exists(exe):
+                    subprocess.Popen([exe, url])  # the page opens the print dialog by itself
+                    return
+        webbrowser.open(url)
 
     # ---------- Borrowing History (Admin and Staff) ----------
 
