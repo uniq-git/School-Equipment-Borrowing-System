@@ -29,7 +29,7 @@ class DatabaseManager:
                 "database": config.DB_NAME,
             }
             
-            return cls._instance #every later call returns the same object
+        return cls._instance #every later call returns the same object
         
     def connect(self):
             """it open new connection to the database"""
